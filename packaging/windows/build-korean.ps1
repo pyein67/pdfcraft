@@ -12,9 +12,11 @@ Push-Location $Repo
 try {
   $env:CARGO_BUILD_JOBS = '2'
   $env:CARGO_NET_GIT_FETCH_WITH_CLI = 'true'
+  Write-Output '::notice title=Korean build phase::Install Rust 1.95 and the Windows x64 target'
   Invoke-Checked { rustup toolchain install 1.95.0 --profile minimal --component rustfmt --component clippy }
   Invoke-Checked { rustup target add --toolchain 1.95.0 x86_64-pc-windows-msvc }
   # Keep the font input used by 0.8.0 releases, then add Korean without dropping other scripts.
+  Write-Output '::notice title=Korean build phase::Prepare and verify the external font input'
   if (!(Test-Path $FontDir)) {
     Invoke-Checked { git clone --no-checkout https://github.com/storytold/craft-fonts $FontDir }
     Invoke-Checked { git -C $FontDir checkout --detach 3d9ab3a132ed0eff457e424226a435a901da30d3 }
@@ -28,13 +30,18 @@ try {
   $env:PDFCRAFT_KOREAN_REQUIRED = '1'
   $env:PDFCRAFT_REQUIRE_WINRES = '1'
   if (!$SkipTests) {
+    Write-Output '::notice title=Korean build phase::Run core PDF and font tests'
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-fonts -p pdfcraft-annot -p pdfcraft-edit -p pdfcraft-render }
+    Write-Output '::notice title=Korean build phase::Run automation tests'
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-automation --test automation }
+    Write-Output '::notice title=Korean build phase::Run UI font and Text box tests'
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-ui-egui --test fonts --test comments }
   }
+  Write-Output '::notice title=Korean build phase::Build the release desktop and CLI executables'
   Invoke-Checked { cargo +1.95.0 build --locked --release --target x86_64-pc-windows-msvc -p pdfcraft -p pdfcraft-cli }
   $TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $Repo 'target' }
   $Output = Join-Path $TargetDir 'x86_64-pc-windows-msvc/release'
+  Write-Output '::notice title=Korean build phase::Package executable attribution and licences'
   Copy-Item (Join-Path $env:CRAFT_FONTS_DIR 'fonts/NanumGothic-Regular.ttf.LICENCE.txt') (Join-Path $Output 'NanumGothic-OFL.txt')
   Copy-Item (Join-Path $env:CRAFT_FONTS_DIR 'KOREAN-ATTRIBUTION.txt') $Output
   Copy-Item (Join-Path $Repo 'NOTICE') $Output
