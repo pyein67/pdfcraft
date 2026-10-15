@@ -1193,6 +1193,11 @@ fn no_hebrew_font() -> EditError {
 /// Hebrew face first (its Latin and digits too, so a line keeps one look), then the Japanese
 /// faces for anything it lacks; other text takes the Japanese faces, as before.
 fn type3_faces(text: &str, family: crate::added::Family, bold: bool) -> Result<(Vec<&'static CraftFont>, bool), EditError> {
+    if pdfcraft_fonts::korean::contains_hangul(text) {
+        let face = pdfcraft_fonts::korean::document_font()
+            .ok_or_else(|| EditError::Invalid("this text needs the Korean font build input (CRAFT_FONTS_DIR)".into()))?;
+        return Ok((vec![face], false));
+    }
     let japanese = pdfcraft_fonts::document_japanese_fonts_for_style(family == crate::added::Family::Times, bold);
     if !text.chars().any(crate::bidi::is_hebrew) {
         return Ok((japanese, false));

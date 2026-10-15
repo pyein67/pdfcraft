@@ -1076,3 +1076,59 @@ fn a_closed_comments_panel_stays_closed_when_picking_comment_tools() {
     h.run_steps(2);
     assert_eq!(h.state().right, Some(RightPanel::Comments));
 }
+
+#[test]
+fn korean_typing_and_paste_post_save_reopen_and_ctrl_f() {
+    if pdfcraft_fonts::CRAFT_FONTS.iter().all(|f| !f.covers("Hang")) {
+        assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none(), "Korean font required");
+        return;
+    }
+    for mode in ["typed", "paste", "ime"] {
+        let mut h = harness(|app| app.set_option("quick", "freetext").unwrap());
+        click_pt(&mut h, (30.0, 85.0));
+        let text = "한글 입력 저장 검색";
+        if mode == "ime" {
+            field(&h, "Type text").click();
+            h.run_steps(1);
+            h.event(egui::Event::Ime(egui::ImeEvent::Preedit { text: "ㅎ".into(), active_range_chars: Some(0..1) }));
+            h.run_steps(1);
+            h.event(egui::Event::Ime(egui::ImeEvent::Preedit { text: "한".into(), active_range_chars: Some(0..1) }));
+            h.run_steps(1);
+            h.event(egui::Event::Ime(egui::ImeEvent::Commit(text.into())));
+        } else if mode == "paste" {
+            field(&h, "Type text").click();
+            h.run_steps(1);
+            h.event(egui::Event::Paste(text.into()));
+        } else {
+            field(&h, "Type text").type_text(text);
+        }
+        h.run_steps(2);
+        assert_eq!(h.state().views[0].comments.composer.as_ref().unwrap().text, text);
+        h.get_by_label("Post").click();
+        h.run_steps(3);
+        settle(&mut h);
+        let annotation = comments(&h).into_iter().find(|a| a.subtype == "FreeText").unwrap();
+        assert_eq!(annotation.contents.as_deref(), Some(text));
+        let id = h.state().views[0].id;
+        let bytes = h.state().session.save_bytes(id).expect("save Korean PDF");
+        h.state_mut().open_bytes("korean-saved.pdf", None, bytes.as_ref().clone()).unwrap();
+        h.run_steps(3);
+        settle(&mut h);
+        let command = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+        h.key_press_modifiers(command, egui::Key::F);
+        h.run_steps(2);
+        assert!(h.state().views.last().unwrap().find.is_some(), "Ctrl+F opens the existing find bar");
+        for query in ["한글", "입력", "저장", "검색"] {
+            // Ctrl+F focuses the frameless find widget. Drive its keyboard events rather
+            // than relying on a placeholder accessibility node for that custom field.
+            h.key_press_modifiers(command, egui::Key::A);
+            h.run_steps(1);
+            h.event(egui::Event::Text(query.into()));
+            h.run_steps(3);
+            settle(&mut h);
+            let find = h.state().views.last().unwrap().find.as_ref().unwrap();
+            assert_eq!(find.query, query);
+            assert_eq!(find.matches.len(), 1, "{query} after Post/save/reopen; mode={mode}");
+        }
+    }
+}
