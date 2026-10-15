@@ -237,6 +237,13 @@ pub fn lines(t: &AddedText) -> Vec<String> {
 /// does).
 fn wrapped(t: &AddedText) -> Vec<(String, bool)> {
     let width = (t.rect[2] - t.rect[0]).max(t.size);
+    if pdfcraft_fonts::korean::contains_hangul(&t.text) {
+        let text = pdfcraft_fonts::korean::compose(&t.text);
+        return pdfcraft_fonts::wrap_with(&text, t.size, width, |s, size| pdfcraft_fonts::korean::text_width(s, size).unwrap_or(0.0))
+            .into_iter()
+            .map(|line| (line, false))
+            .collect();
+    }
     let mut out = Vec::new();
     for para in t.text.split('\n') {
         let arabic = para.chars().any(is_arabic);
@@ -317,6 +324,10 @@ fn is_arabic(c: char) -> bool {
 /// with the craft-fonts Arabic face (#125), or Arabic that the face can't draw (or that has no
 /// face to draw it). Page-content tools refuse such text; the Add-text editor keeps it open.
 pub fn first_undrawable(t: &AddedText) -> Option<char> {
+    if pdfcraft_fonts::korean::contains_hangul(&t.text) && pdfcraft_fonts::korean::document_font().is_some() {
+        let text = pdfcraft_fonts::korean::compose(&t.text);
+        return text.chars().find(|c| !matches!(c, '\n' | '\r') && !pdfcraft_fonts::korean::can_draw(&c.to_string()));
+    }
     if t.text.chars().any(is_thai) {
         if let Some(c) = t.text.chars().find(|c| is_thai(*c) && !pdfcraft_fonts::thai_has(*c)) {
             return Some(c);
@@ -478,6 +489,48 @@ const GLYPHS_PER_FONT: usize = 240;
 /// A line of a shaped-text item after layout: its text, whether its paragraph runs right to left,
 /// its pieces in drawing order and its width at the item's size.
 type LaidLine = (String, bool, Vec<Piece>, f64);
+
+/// Full Unicode TrueType embedding for Korean Add Text, using real font advances. Keep a
+/// distinct resource per item so replacing it cannot alter an existing item's glyph mapping.
+fn draw_korean(doc: &mut Document, t: &AddedText, taken: &Dict, out: &mut Vec<u8>) -> Result<Dict, EditError> {
+    let mut fonts = Dict::new();
+    let (embedded, metrics) = pdfcraft_fonts::korean::embed(doc, &mut fonts).map_err(EditError::Invalid)?;
+    let reference = fonts.get(embedded.as_bytes()).cloned().ok_or_else(|| EditError::Invalid("missing Korean font resource".into()))?;
+    let mut suffix = 0usize;
+    let mut name = format!("PCKo{suffix}");
+    while taken.contains(name.as_bytes()) {
+        suffix = suffix.checked_add(1).ok_or_else(|| EditError::Invalid("too many font resources".into()))?;
+        name = format!("PCKo{suffix}");
+    }
+    let mut fonts = Dict::new();
+    fonts.set(name.as_bytes().to_vec(), reference);
+    let r = text_rect(t);
+    let [cr, cg, cb] = t.color.map(|v| v.clamp(0.0, 1.0));
+    out.extend(format!("BT /{name} {} Tf {} {} {} rg\n", n(t.size), n(cr), n(cg), n(cb)).bytes());
+    let lines = lines(t);
+    for (i, line) in lines.iter().enumerate() {
+        let w = pdfcraft_fonts::korean::width(&metrics, line, t.size);
+        let x = match t.align {
+            Align::Left | Align::Justify => r[0],
+            Align::Center => r[0] + ((r[2] - r[0]) - w) / 2.0,
+            Align::Right => r[2] - w,
+        };
+        let y = r[3] - (i as f64 * 1.2 + 0.95) * t.size;
+        let spaces = line.matches(' ').count();
+        // Tw does not apply to two-byte composite-font codes. Explicitly place each word.
+        let extra = if t.align == Align::Justify && i + 1 < lines.len() && spaces > 0 { ((r[2] - r[0]) - w).max(0.0) / spaces as f64 } else { 0.0 };
+        let mut x = x;
+        for word in line.split_inclusive(' ') {
+            let encoded = metrics.encode(word).ok_or_else(|| EditError::Invalid("the Korean font cannot encode this text".into()))?;
+            out.extend(format!("1 0 0 1 {} {} Tm ", n(x), n(y)).bytes());
+            out.extend(literal(&encoded));
+            out.extend_from_slice(b" Tj\n");
+            x += pdfcraft_fonts::korean::width(&metrics, word, t.size) + if word.ends_with(' ') { extra } else { 0.0 };
+        }
+    }
+    out.extend_from_slice(b"ET\n");
+    Ok(fonts)
+}
 
 /// Draw a text item that has Arabic or Thai in it. Each line is laid out in display order; Arabic glyphs
 /// come from Type 3 fonts drawn from the craft-fonts face's outlines (no font file is embedded),
@@ -704,6 +757,12 @@ fn draw(doc: &mut Document, c: &Content, view: [f64; 6], taken: &Dict, existing:
     let mut out = format!("q {} {} {} {} {} {} cm\n", n(view[0]), n(view[1]), n(view[2]), n(view[3]), n(view[4]), n(view[5])).into_bytes();
     match c {
         Content::Text(t) => {
+            if pdfcraft_fonts::korean::contains_hangul(&t.text) {
+                let fonts = draw_korean(doc, t, taken, &mut out)?;
+                res.set(b"Font".to_vec(), Object::Dict(fonts));
+                out.extend_from_slice(b"Q\n");
+                return Ok((out, res));
+            }
             let base = t.family.base_font(t.bold, t.italic);
             let name = font_name(base);
             let mut font = Dict::new();
@@ -1078,7 +1137,11 @@ pub fn delete_content(doc: &mut Document, page: usize, index: usize) -> Result<(
 fn own_fonts(doc: &Document, obj: ObjRef) -> Vec<Vec<u8>> {
     let Object::Stream(s) = &*doc.get(obj) else { return Vec::new() };
     let Ok(data) = s.decoded() else { return Vec::new() };
-    data.split(u8::is_ascii_whitespace).filter_map(|w| w.strip_prefix(b"/")).filter(|w| w.starts_with(b"PCAr")).map(<[u8]>::to_vec).collect()
+    data.split(u8::is_ascii_whitespace)
+        .filter_map(|w| w.strip_prefix(b"/"))
+        .filter(|w| w.starts_with(b"PCAr") || w.starts_with(b"PCKo"))
+        .map(<[u8]>::to_vec)
+        .collect()
 }
 
 fn drop_fonts(doc: &Document, res: &mut Dict, names: &[Vec<u8>]) {

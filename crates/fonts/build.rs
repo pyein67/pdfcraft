@@ -10,6 +10,7 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo::rerun-if-env-changed=CRAFT_FONTS_DIR");
     println!("cargo::rerun-if-env-changed=CRAFT_FONTS_REQUIRED");
+    println!("cargo::rerun-if-env-changed=PDFCRAFT_KOREAN_REQUIRED");
     let mut src = String::from("pub static CRAFT_FONTS: &[CraftFont] = &[\n");
     if let Some(dir) = std::env::var_os("CRAFT_FONTS_DIR").map(PathBuf::from) {
         match craft_fonts(&dir) {
@@ -19,6 +20,9 @@ fn main() {
             }
             Err(e) => println!("cargo::warning=building without craft-fonts: CRAFT_FONTS_DIR={}: {e}", dir.display()),
         }
+    }
+    if std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_some() && !src.contains("\"Hang\"") {
+        println!("cargo::error=Korean font required: run cargo xtask korean-fonts <external directory> and set CRAFT_FONTS_DIR to it");
     }
     src.push_str("];\n");
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default()).join("craft_fonts.rs");
