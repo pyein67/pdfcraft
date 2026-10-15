@@ -35,6 +35,9 @@ jobs:
             '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
             Get-Content korean-build.log -Tail 200 | Add-Content $env:GITHUB_STEP_SUMMARY
             '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+            $message = (Get-Content korean-build.log -Tail 60) -join "`n"
+            $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Korean build output::$message"
             throw
           }
       - name: Upload failed Korean build log

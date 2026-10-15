@@ -54,3 +54,8 @@ code while adding the last 200 output lines to the job summary on failure and
 uploading the complete test log. The Korean Windows build does the same for
 its PowerShell exception and build output. Neither wrapper turns a failure
 into success or changes which tests run.
+
+The failed Linux test log was uploaded in run `38686392322` as `test-log-Linux`
+(artifact `11950643633`), but anonymous access also hides step summaries and
+artifact downloads here. The final 60 lines are additionally emitted as an
+escaped GitHub error annotation, which the public job page does expose.
