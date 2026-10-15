@@ -84,12 +84,28 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        if: runner.os != 'Linux'
-        run: cargo test --workspace
+        shell: bash
+        run: |
+          set +e
+          cargo test --workspace 2>&1 | tee pdfcraft-ci-test.log
+          result=${PIPESTATUS[0]}
+          if [ "$result" -ne 0 ]; then
+            {
+              echo '### Workspace test failure'
+              echo '```text'
+              tail -n 200 pdfcraft-ci-test.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$result"
 
-      - name: Test (with craft-fonts)
-        if: runner.os == 'Linux'
-        run: cargo test --workspace
+      - name: Upload failed test log
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: test-log-${{ runner.os }}
+          path: pdfcraft-ci-test.log
+          if-no-files-found: ignore
 
       - name: Layering
         if: runner.os == 'Linux'

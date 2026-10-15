@@ -40,3 +40,17 @@ Full workspace tests, wasm checks and the GitHub rerun are recorded separately
 when complete. A successful cross-build does not establish interactive Windows
 10 IME behavior; native acceptance remains necessary as described in
 [korean-windows.md](korean-windows.md).
+
+## First rerun
+
+Commit `3d080d7e` passed remote Clippy on both platforms, wasm, cargo-deny and
+packaging lint. Ubuntu then failed at the workspace test step (exit 101).
+Locally, the full workspace suite with Korean fonts and required qpdf/Poppler
+completed: 3,096 passed, zero failed, 14 ignored. The local duplicate wasm
+command timed out including its build-lock wait; the remote wasm job passed.
+
+To diagnose the remote-only test failure, CI now preserves the real Cargo exit
+code while adding the last 200 output lines to the job summary on failure and
+uploading the complete test log. The Korean Windows build does the same for
+its PowerShell exception and build output. Neither wrapper turns a failure
+into success or changes which tests run.

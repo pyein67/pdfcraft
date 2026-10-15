@@ -26,7 +26,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Build and test PdfCraft with Korean font embedding
         shell: pwsh
-        run: ./packaging/windows/build-korean.ps1
+        run: |
+          try {
+            ./packaging/windows/build-korean.ps1 *>&1 | Tee-Object -FilePath korean-build.log
+          } catch {
+            $_ | Out-String | Add-Content korean-build.log
+            '### Korean build failure' | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
+            Get-Content korean-build.log -Tail 200 | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+            throw
+          }
+      - name: Upload failed Korean build log
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: korean-build-log
+          path: korean-build.log
+          if-no-files-found: ignore
       - name: Upload unsigned x64 executables and font licence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
