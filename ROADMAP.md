@@ -150,6 +150,8 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 
 ## Progress log
 
+- **2026-10-15 (M0, PR #1 CI):** Separately repair baseline date-parser and RGBA decoder Clippy diagnostics and update rustls 0.23.45 to 0.23.46 for four advisories. Stable workspace Clippy and dependency policy checks pass locally; remote raw logs remain inaccessible from this cloud environment. See `docs/pr1-ci.md`. Estimates unchanged.
+
 - **2026-10-15 (M5/M7, Korean text):** Nanum Gothic build input, Unicode TrueType Text box/Add Text appearances and canonical Hangul Find. Linux engine and egui harness regressions cover Post/save/reopen/search; Windows x64 core cross-check passes, while the full EXE cross-check lacks MSVC lib.exe. Native Windows 10 IME/runtime remains unvalidated. Estimates unchanged.
 
 - **2026-10-13 (M3, native-opening candidate):** Chosen tools survive preparation, conversion and password retries; startup intake waits for pending preparation. Regression tests cover completion, cancellation and document identity. Estimates unchanged.
