@@ -36,6 +36,7 @@ jobs:
             Get-Content korean-build.log -Tail 200 | Add-Content $env:GITHUB_STEP_SUMMARY
             '```' | Add-Content $env:GITHUB_STEP_SUMMARY
             $message = (Get-Content korean-build.log -Tail 60) -join "`n"
+            if ($message.Length -gt 12000) { $message = $message.Substring($message.Length - 12000) }
             $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
             Write-Output "::error title=Korean build output::$message"
             throw

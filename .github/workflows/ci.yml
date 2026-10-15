@@ -96,7 +96,7 @@ jobs:
               tail -n 200 pdfcraft-ci-test.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            message=$(tail -n 60 pdfcraft-ci-test.log)
+            message=$(tail -n 60 pdfcraft-ci-test.log | tail -c 12000)
             message=${message//'%'/'%25'}
             message=${message//$'\r'/'%0D'}
             message=${message//$'\n'/'%0A'}
