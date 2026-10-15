@@ -59,3 +59,33 @@ The failed Linux test log was uploaded in run `38686392322` as `test-log-Linux`
 (artifact `11950643633`), but anonymous access also hides step summaries and
 artifact downloads here. The final 60 lines are additionally emitted as an
 escaped GitHub error annotation, which the public job page does expose.
+
+## Korean-patch regression identified from actual remote output
+
+Run `38688008163`, Ubuntu job `116267281403`, exposes the failure in its
+annotation: `creating_from_text_refuses_what_the_font_cannot_draw` failed at
+`automation.rs:2717`, reporting unsupported `A` (`U+0041`) for
+`ABC 제안서 시험`; the existing test correctly expects `제` (`U+C81C`).
+The automation suite completed with 156 passing and one failing test.
+
+This **is a Korean-patch regression**, distinct from the baseline lint and
+security issues above. Without a bundled Korean face, `first_undrawable`
+tested every character against that absent face, incorrectly rejecting even
+ASCII. It now uses the Korean face only when one is present; otherwise the
+existing standard-font validation reports the first genuinely unsupported
+character. The existing regression test and its expected Unicode value are
+unchanged. Korean-enabled builds still use the embedded Unicode font.
+
+An additional local Rust 1.99 check using the unmodified CI font input passed
+all 598 core tests before this correction; it did not include the automation
+test that exposed the problem. The earlier full 3,096-test run used Korean
+fonts, which explains why it did not expose the missing-font path.
+
+After the correction:
+
+- Rust 1.99 with the unmodified CI font input: all 157 automation tests pass,
+  including the unchanged failing test; all 132 edit library tests pass.
+- Rust 1.95 with Korean fonts required: all three Korean automation regressions
+  pass (Text box Post/save/reopen/search/render, Add Text, existing text edits).
+- Scoped Rust 1.99 edit/automation all-targets Clippy with `-D warnings`,
+  formatting, edit wasm32 check, layers and assets pass.

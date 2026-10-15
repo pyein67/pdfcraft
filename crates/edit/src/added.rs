@@ -324,7 +324,7 @@ fn is_arabic(c: char) -> bool {
 /// with the craft-fonts Arabic face (#125), or Arabic that the face can't draw (or that has no
 /// face to draw it). Page-content tools refuse such text; the Add-text editor keeps it open.
 pub fn first_undrawable(t: &AddedText) -> Option<char> {
-    if pdfcraft_fonts::korean::contains_hangul(&t.text) {
+    if pdfcraft_fonts::korean::contains_hangul(&t.text) && pdfcraft_fonts::korean::document_font().is_some() {
         let text = pdfcraft_fonts::korean::compose(&t.text);
         return text.chars().find(|c| !matches!(c, '\n' | '\r') && !pdfcraft_fonts::korean::can_draw(&c.to_string()));
     }
