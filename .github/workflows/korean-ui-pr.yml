@@ -1,0 +1,34 @@
+name: Open Korean UI pull request
+
+on:
+  push:
+    branches: [feat/korean-ui-localization]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Open or find the feature pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=$(gh pr list --repo "$GITHUB_REPOSITORY" --head feat/korean-ui-localization --base main --state open --json url --jq '.[0].url // empty')
+          if [ -z "$url" ]; then
+            if ! url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head feat/korean-ui-localization --title 'M14: add Korean UI localization to PdfCraft 0.8.0' --body-file docs/korean-ui-pr.md 2>pr-error.txt); then
+              message=$(tail -c 8000 pr-error.txt)
+              message=${message//'%'/'%25'}
+              message=${message//$'\r'/'%0D'}
+              message=${message//$'\n'/'%0A'}
+              echo "::error title=Korean UI PR creation::$message"
+              exit 1
+            fi
+          fi
+          echo "::notice title=Korean UI pull request::$url"
+          echo "Korean UI pull request: $url" >> "$GITHUB_STEP_SUMMARY"

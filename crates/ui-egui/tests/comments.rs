@@ -1083,12 +1083,15 @@ fn korean_typing_and_paste_post_save_reopen_and_ctrl_f() {
         assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none(), "Korean font required");
         return;
     }
-    for mode in ["typed", "paste", "ime"] {
-        let mut h = harness(|app| app.set_option("quick", "freetext").unwrap());
+    for (language, mode) in [("en", "typed"), ("en", "paste"), ("en", "ime"), ("ko", "typed"), ("ko", "paste"), ("ko", "ime")] {
+        let mut h = harness(move |app| {
+            app.set_option("quick", "freetext").unwrap();
+            app.set_option("language", language).unwrap();
+        });
         click_pt(&mut h, (30.0, 85.0));
         let text = "한글 입력 저장 검색";
         if mode == "ime" {
-            field(&h, "Type text").click();
+            field(&h, if language == "ko" { "텍스트 입력" } else { "Type text" }).click();
             h.run_steps(1);
             h.event(egui::Event::Ime(egui::ImeEvent::Preedit { text: "ㅎ".into(), active_range_chars: Some(0..1) }));
             h.run_steps(1);
@@ -1096,15 +1099,15 @@ fn korean_typing_and_paste_post_save_reopen_and_ctrl_f() {
             h.run_steps(1);
             h.event(egui::Event::Ime(egui::ImeEvent::Commit(text.into())));
         } else if mode == "paste" {
-            field(&h, "Type text").click();
+            field(&h, if language == "ko" { "텍스트 입력" } else { "Type text" }).click();
             h.run_steps(1);
             h.event(egui::Event::Paste(text.into()));
         } else {
-            field(&h, "Type text").type_text(text);
+            field(&h, if language == "ko" { "텍스트 입력" } else { "Type text" }).type_text(text);
         }
         h.run_steps(2);
         assert_eq!(h.state().views[0].comments.composer.as_ref().unwrap().text, text);
-        h.get_by_label("Post").click();
+        h.get_by_label(if language == "ko" { "등록" } else { "Post" }).click();
         h.run_steps(3);
         settle(&mut h);
         let annotation = comments(&h).into_iter().find(|a| a.subtype == "FreeText").unwrap();

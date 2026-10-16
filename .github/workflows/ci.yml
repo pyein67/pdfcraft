@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/korean-ui-localization]
   pull_request:
   workflow_dispatch:
   schedule:

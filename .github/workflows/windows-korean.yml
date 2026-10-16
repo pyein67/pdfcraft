@@ -2,8 +2,11 @@ name: Windows x64 Korean build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/korean-ui-localization]
   pull_request:
     paths:
+      - 'crates/engine/**'
       - 'crates/fonts/**'
       - 'crates/annot/**'
       - 'crates/edit/**'
@@ -51,7 +54,7 @@ jobs:
       - name: Upload unsigned x64 executables and font licence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: pdfcraft-0.8.0-windows-x64-korean-unsigned
+          name: pdfcraft-0.8.0-windows-x64-korean-ui-unsigned
           path: |
             target/x86_64-pc-windows-msvc/release/pdfcraft.exe
             target/x86_64-pc-windows-msvc/release/pdfcraft-cli.exe

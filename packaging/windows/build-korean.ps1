@@ -34,8 +34,8 @@ try {
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-fonts -p pdfcraft-annot -p pdfcraft-edit -p pdfcraft-render }
     Write-Output '::notice title=Korean build phase::Run automation tests'
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-automation --test automation }
-    Write-Output '::notice title=Korean build phase::Run UI font and Text box tests'
-    Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-ui-egui --test fonts --test comments }
+    Write-Output '::notice title=Korean build phase::Run Korean localization, font, language-switch and Text box tests'
+    Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-ui-egui --lib --test fonts --test comments --test control }
   }
   Write-Output '::notice title=Korean build phase::Build the release desktop and CLI executables'
   Invoke-Checked { cargo +1.95.0 build --locked --release --target x86_64-pc-windows-msvc -p pdfcraft -p pdfcraft-cli }

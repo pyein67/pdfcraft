@@ -3365,3 +3365,14 @@ licence_sha256 = "eeacf16032901d0ed0456876ec77b8f0fda6b3fecec7d972f8543eb602e6c3
 kind = "korean-font"
 usage = "Korean UI and embedded PDF text; cargo xtask korean-fonts installs this unmodified font in the external craft-fonts build input, never in this repository"
 sha256 = "76f45ef4a6bcff344c837c95a7dcc26e017e38b5846d5ae0cdcb5b86be2e2d31"
+
+[[asset]]
+path = "crates/ui-egui/src/i18n/ko.tsv"
+title = "Korean interface translation catalog"
+author = "PdfCraft contributors"
+source = "Contributor-original: clean-room translations of PdfCraft English UI labels"
+licence = "MIT OR Apache-2.0"
+licence_file = "LICENSE-MIT"
+kind = "translation"
+usage = "Korean UI strings compiled into the existing localization registry"
+sha256 = "863963f84a735671424a169eca8921cddf743fc73d2d900273b2a73228196452"

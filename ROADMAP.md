@@ -1,5 +1,7 @@
 # PdfCraft roadmap
 
+> **Last reviewed:** 2026-10-16 · **Last updated:** 2026-10-16 · **Change:** minor (M14 Korean UI; Windows 10 interactive acceptance pending; estimates unchanged)
+
 **Stage: alpha** · next: beta, ~26% (ready for real work 49% → 75%) and ~400–700 h away
 
 > **Last reviewed:** 2026-10-15 · **Last updated:** 2026-10-15 · **Change:** minor (M5/M7 Korean font embedding, Post/save/reopen/search; Windows 10 native runtime remains unvalidated; estimates unchanged)
@@ -149,6 +151,8 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 | 8 | 1.0 polish: performance, right-to-left, missing languages, keyboard-only (M14) | 55–95 |
 
 ## Progress log
+
+- **2026-10-16 (M14, Korean UI):** 2,592-entry clean-room catalog, Korean locale and calendar names reuse existing preference/Windows detection and English fallback. UI tests: 479 passed, 1 existing measurement probe ignored; English/Korean Post/save/reopen/Ctrl+F and 100/125/150% layout regressions pass. Embedded-font screenshots inspected; native Windows 10 interactive acceptance pending. See `docs/korean-ui-validation.md`. Estimates unchanged.
 
 - **2026-10-15 (M5, PR #1 fallback):** Actual Ubuntu test output identified the Korean patch's missing-font refusal incorrectly reporting ASCII instead of the unsupported Hangul character. Preserve the original standard-font validation when no Korean face is embedded; the existing automation regression remains unchanged. See `docs/pr1-ci.md`. Estimates unchanged.
 
