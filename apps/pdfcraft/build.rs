@@ -1,6 +1,6 @@
 //! Windows only: embed the app icon and version info (VERSIONINFO) into `pdfcraft.exe`, so it
-//! shows in Explorer, the taskbar, the Start menu and Alt-Tab. A separate PDF document icon
-//! uses resource ID 2; the installer references it as `pdfcraft.exe,-2`.
+//! shows in Explorer, the taskbar, the Start menu and Alt-Tab. The same supplied design is
+//! embedded again as PDF document resource ID 2, referenced by the installer as `pdfcraft.exe,-2`.
 //!
 //! On every other target this does nothing. A missing resource compiler is a warning, so a
 //! cross-compile from macOS or Linux still links, unless `PDFCRAFT_REQUIRE_WINRES=1` turns it
@@ -11,16 +11,15 @@ mod windows_manifest;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../../assets/app-icon/pdfcraft.ico");
-    println!("cargo:rerun-if-changed=../../assets/app-icon/pdfcraft-document.ico");
+    println!("cargo:rerun-if-changed=../../assets/app-icon/korean/pdfcraft-pdf-icon.ico");
     println!("cargo:rerun-if-changed=src/windows_manifest.rs");
     println!("cargo:rerun-if-env-changed=PDFCRAFT_REQUIRE_WINRES");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
     let mut res = winresource::WindowsResource::new();
-    res.set_icon("../../assets/app-icon/pdfcraft.ico")
-        .set_icon_with_id("../../assets/app-icon/pdfcraft-document.ico", "2")
+    res.set_icon("../../assets/app-icon/korean/pdfcraft-pdf-icon.ico")
+        .set_icon_with_id("../../assets/app-icon/korean/pdfcraft-pdf-icon.ico", "2")
         .set_manifest(windows_manifest::WINDOWS_MANIFEST)
         .set("ProductName", "PdfCraft")
         .set("FileDescription", "PdfCraft PDF workbench")

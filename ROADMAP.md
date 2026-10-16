@@ -152,6 +152,7 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 
 ## Progress log
 
+- **2026-10-16 (M14, Windows PDF icon):** Contributor-supplied GPT-generated ICO wired to both Windows EXE icon groups, window/taskbar and installer shortcuts; originals retained. Optional ZIP registration preserves existing PDF defaults and exports previous registration. Native PE/registry/GUI probes added; Windows 10 Explorer acceptance remains manual. See `docs/windows-korean-icon.md`. Estimates unchanged.
 - **2026-10-16 (M14, Korean UI):** 2,592-entry clean-room catalog, Korean locale and calendar names reuse existing preference/Windows detection and English fallback. UI tests: 479 passed, 1 existing measurement probe ignored; English/Korean Post/save/reopen/Ctrl+F and 100/125/150% layout regressions pass. Embedded-font screenshots inspected; native Windows 10 interactive acceptance pending. See `docs/korean-ui-validation.md`. Estimates unchanged.
 
 - **2026-10-15 (M5, PR #1 fallback):** Actual Ubuntu test output identified the Korean patch's missing-font refusal incorrectly reporting ASCII instead of the unsupported Hangul character. Preserve the original standard-font validation when no Korean face is embedded; the existing automation regression remains unchanged. See `docs/pr1-ci.md`. Estimates unchanged.

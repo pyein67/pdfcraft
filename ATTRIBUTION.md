@@ -4,7 +4,7 @@
 
 Every asset PdfCraft includes, bundles or uses to build its published material, with its author, source and licence. The policy is in [AGENTS.md](AGENTS.md) §1. The machine-readable list, with SHA-256 hashes, is [ATTRIBUTION.toml](ATTRIBUTION.toml). Licence texts are kept beside the assets and summarised in [NOTICE](NOTICE).
 
-## In this repository (271)
+## In this repository (273)
 
 | Asset | Title | Author | Licence | Source | Used for |
 |---|---|---|---|---|---|
@@ -279,6 +279,8 @@ Every asset PdfCraft includes, bundles or uses to build its published material, 
 | `assets/icons/monitor.svg` | Lucide icon "monitor" | Lucide Contributors (portions Cole Bemis, Feather) | ISC | https://github.com/lucide-icons/lucide (npm lucide-static 1.49.0, icons/monitor.svg) | UI icon, embedded via crates/ui-egui/src/icon_data.rs |
 | `crates/ui-egui/src/i18n/sl.tsv` | Slovene interface translation catalog | PdfCraft contributors | MIT OR Apache-2.0 | Contributor-original: clean-room translations of PdfCraft's English UI labels, no proprietary localisation resources | Slovene UI strings, compiled in by crates/ui-egui/src/i18n/mod.rs |
 | `crates/ui-egui/src/i18n/ko.tsv` | Korean interface translation catalog | PdfCraft contributors | MIT OR Apache-2.0 | Contributor-original: clean-room translations of PdfCraft English UI labels | Korean UI strings compiled into the existing localization registry |
+| `assets/app-icon/korean/pdfcraft-pdf-icon.ico` | Korean PdfCraft PDF icon | pyein67 (GPT-generated contribution) | MIT OR Apache-2.0 | Contributor-supplied GPT-generated icon; upload PdfCraft_Korean_PDF_Icon.ico; origin confirmed by contributor on 2026-10-16 | Windows executable resources 1 and 2; installer shortcuts and PDF association icon |
+| `assets/app-icon/korean/pdfcraft-pdf-icon-256.png` | Korean PdfCraft PDF icon (256px frame) | pyein67 (GPT-generated contribution) | MIT OR Apache-2.0 | Contributor-supplied GPT-generated icon; upload PdfCraft_Korean_PDF_Icon.ico; origin confirmed by contributor on 2026-10-16 | Windows window and taskbar icon; unchanged 256px PNG frame extracted from the supplied ICO |
 
 ## Compiled in through dependencies (6)
 

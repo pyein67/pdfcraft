@@ -41,10 +41,15 @@ try {
   Invoke-Checked { cargo +1.95.0 build --locked --release --target x86_64-pc-windows-msvc -p pdfcraft -p pdfcraft-cli }
   $TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $Repo 'target' }
   $Output = Join-Path $TargetDir 'x86_64-pc-windows-msvc/release'
+  Write-Output '::notice title=Korean build phase::Verify native icon resources, registration and GUI PDF launch'
+  & (Join-Path $PSScriptRoot 'test-korean-icons.ps1') -Executable (Join-Path $Output 'pdfcraft.exe')
   Write-Output '::notice title=Korean build phase::Package executable attribution and licences'
   Copy-Item (Join-Path $env:CRAFT_FONTS_DIR 'fonts/NanumGothic-Regular.ttf.LICENCE.txt') (Join-Path $Output 'NanumGothic-OFL.txt')
   Copy-Item (Join-Path $env:CRAFT_FONTS_DIR 'KOREAN-ATTRIBUTION.txt') $Output
   Copy-Item (Join-Path $Repo 'NOTICE') $Output
+  Copy-Item (Join-Path $Repo 'ATTRIBUTION.md') $Output
+  Copy-Item (Join-Path $PSScriptRoot 'Register-PdfCraft.ps1') $Output
+  Copy-Item (Join-Path $Repo 'docs/windows-korean-icon.md') (Join-Path $Output 'WINDOWS-ICON-README.md')
   foreach ($LicenceName in @('LICENSE-MIT', 'LICENSE-APACHE')) {
     Copy-Item (Join-Path $Repo $LicenceName) $Output
   }
