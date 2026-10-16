@@ -1,0 +1,66 @@
+name: Restore Korean Windows ZIP download
+
+on:
+  push:
+    branches: [chore/restore-korean-icon-download]
+    paths: ['.github/workflows/publish-korean-icon-download.yml']
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-korean-icon-download
+  cancel-in-progress: false
+
+jobs:
+  publish-verified-zip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: pyein67/pdfcraft
+      SOURCE_SHA: a49b1991c86fc57e750f31e68f5b2099c6bbb2ca
+      ARTIFACT_ID: '12031331235'
+      ARTIFACT_SHA256: efe76c7f25c65fb23b5f1f876f09fd0e5b6677d42e310ba4ae4008bd789c5ce0
+      RELEASE_TAG: v0.8.0-korean-ui-pdf-icon
+      ZIP_NAME: pdfcraft-0.8.0-windows-x64-korean-ui-pdf-icon-unsigned.zip
+    steps:
+      - name: Retrieve and verify the tested Windows ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID" > artifact.json
+          jq -e --arg sha "$SOURCE_SHA" '.expired == false and .workflow_run.head_sha == $sha and .workflow_run.id == 38858842640 and .name == "pdfcraft-0.8.0-windows-x64-korean-ui-pdf-icon-unsigned"' artifact.json
+          gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > "$ZIP_NAME"
+          printf '%s  %s\n' "$ARTIFACT_SHA256" "$ZIP_NAME" | sha256sum --check -
+          unzip -t "$ZIP_NAME"
+          for file in pdfcraft.exe pdfcraft-cli.exe Register-PdfCraft.ps1 WINDOWS-ICON-README.md LICENSE-MIT LICENSE-APACHE ATTRIBUTION.md; do
+            unzip -Z1 "$ZIP_NAME" | grep -Fx "$file" > /dev/null
+          done
+          echo 'Verified the original, tested Windows ZIP without changing its contents.'
+      - name: Publish a persistent GitHub Release download
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'NOTES'
+          PdfCraft 0.8.0 Korean UI with the contributor-supplied PDF icon, for Windows x64.
+
+          This is the exact ZIP produced by the successful Windows build at source commit a49b1991c86fc57e750f31e68f5b2099c6bbb2ca. Its contents have not been changed or rebuilt.
+          Build and native checks: https://github.com/pyein67/pdfcraft/actions/runs/38858842640
+          SHA-256: efe76c7f25c65fb23b5f1f876f09fd0e5b6677d42e310ba4ae4008bd789c5ce0
+
+          Includes unsigned desktop and CLI executables, Korean font licences, attribution, and optional current-user PDF registration. Extract to a permanent folder. For PDF association, run Register-PdfCraft.ps1 and choose PdfCraft in Windows Default apps; existing defaults are preserved.
+
+          Native checks ran on Windows Server 2022: original icon frames in both EXE resource groups, isolated PDF registration, actual GUI launch/PDF open/quit, and Korean regression suites. Physical Windows 10 Explorer/taskbar acceptance remains unverified.
+          NOTES
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' > release-target.txt
+            test "$(cat release-target.txt)" = "$SOURCE_SHA"
+            gh release upload "$RELEASE_TAG" "$ZIP_NAME"
+          else
+            gh release create "$RELEASE_TAG" "$ZIP_NAME" --target "$SOURCE_SHA" --title 'PdfCraft 0.8.0 Korean UI — Windows x64 PDF icon' --notes-file release-notes.md --prerelease
+          fi
+          echo "Download: https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$ZIP_NAME" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Persistent Windows ZIP::https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$ZIP_NAME"
