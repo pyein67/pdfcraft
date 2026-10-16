@@ -284,6 +284,9 @@ pub fn undrawable_text(d: &Dict) -> Option<(&'static str, char)> {
         b"Redact" => ("the redaction's overlay text", text(b"OverlayText")?),
         _ => return None,
     };
+    if d.name(b"Subtype") == Some(b"FreeText") && pdfcraft_fonts::korean::contains_hangul(&text) && pdfcraft_fonts::korean::can_draw(&text) {
+        return None;
+    }
     Some((what, first_undrawable(&text)?))
 }
 
@@ -291,6 +294,11 @@ pub fn undrawable_text(d: &Dict) -> Option<(&'static str, char)> {
 /// Text the standard fonts can't draw comes out as `?`: [`undrawable_text`] says which, and
 /// [`crate::set_appearance`] marks the annotation with it (`pdfcraft_fonts::UNDRAWN_MARK`).
 pub fn build(d: &Dict) -> Option<Stream> {
+    build_with_font(d, None)
+}
+
+/// `font` is a validated embedded Unicode face, supplied by the document-owning layer.
+pub(crate) fn build_with_font(d: &Dict, font: Option<&pdfcraft_fonts::pdf::Metrics>) -> Option<Stream> {
     // Imported measurement appearances may include leaders, captions and formatting that
     // this builder cannot reproduce. Preserve them rather than silently losing detail.
     if d.contains(b"Measure") && !d.contains(b"PCMeasureValue") {
@@ -713,6 +721,8 @@ pub fn build(d: &Dict) -> Option<Stream> {
                 ));
             }
             let text = d.get(b"Contents").and_then(|o| o.as_string()).map(PdfString::to_text).unwrap_or_default();
+            let text = if font.is_some() { pdfcraft_fonts::korean::compose(&text) } else { text };
+            let measure = |text: &str, size: f64| font.map_or_else(|| text_width(text, size), |f| pdfcraft_fonts::korean::width(f, text, size));
             let pad = 2.0 + bw;
             let width = (rect[2] - rect[0] - 2.0 * pad).max(1.0);
             let q = d.int(b"Q").unwrap_or(0);
@@ -727,18 +737,21 @@ pub fn build(d: &Dict) -> Option<Stream> {
             ));
             let mut out = c.into_bytes();
             let mut y = rect[3] - pad - size * 0.9;
-            for line in wrap(&text, size, width) {
+            for line in pdfcraft_fonts::wrap_with(&text, size, width, measure) {
                 if y < rect[1] - size {
                     break;
                 }
-                let lw = text_width(&line, size);
+                let lw = measure(&line, size);
                 let x = match q {
                     1 => rect[0] + pad + (width - lw) / 2.0,
                     2 => rect[2] - pad - lw,
                     _ => rect[0] + pad,
                 };
                 out.extend(format!("1 0 0 1 {} {} Tm ", n(x), n(y)).bytes());
-                out.extend(literal(&win_ansi(&line)));
+                out.extend(literal(&match font {
+                    Some(f) => f.encode(&line)?,
+                    None => win_ansi(&line),
+                }));
                 out.extend_from_slice(b" Tj\n");
                 y -= size * 1.2;
             }
@@ -749,7 +762,7 @@ pub fn build(d: &Dict) -> Option<Stream> {
             font.set(b"BaseFont".to_vec(), Object::name("Helvetica"));
             font.set(b"Encoding".to_vec(), Object::name("WinAnsiEncoding"));
             let mut fonts = Dict::new();
-            fonts.set(b"Helv".to_vec(), Object::Dict(font));
+            fonts.set(b"Helv".to_vec(), d.get(b"PCKoreanFont").cloned().unwrap_or(Object::Dict(font)));
             res.set(b"Font".to_vec(), Object::Dict(fonts));
             return Some(form(full, &out, res));
         }

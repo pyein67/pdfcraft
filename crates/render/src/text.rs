@@ -106,7 +106,7 @@ impl PageText {
             return Vec::new();
         }
         let fold = |s: &str| if case_sensitive { s.to_string() } else { fold_case(s) };
-        let needle: Vec<char> = fold(needle).split_whitespace().collect::<Vec<_>>().join(" ").chars().collect();
+        let needle: Vec<char> = pdfcraft_fonts::korean::search_chars(&fold(needle).split_whitespace().collect::<Vec<_>>().join(" "));
         if needle.is_empty() {
             return Vec::new();
         }
@@ -116,7 +116,7 @@ impl PageText {
             if i > 0 && (self.space_before[i] || self.line_of[i] != self.line_of[i - 1]) && chars.last().is_some_and(|c| c.0 != ' ') {
                 chars.push((' ', i));
             }
-            for c in fold(&g.text).chars() {
+            for c in pdfcraft_fonts::korean::search_chars(&fold(&g.text)) {
                 let c = if c.is_whitespace() { ' ' } else { c };
                 // The query collapses a run of whitespace to one space, so collapse the page too.
                 if c == ' ' && chars.last().is_some_and(|k| k.0 == ' ') {
@@ -130,7 +130,10 @@ impl PageText {
         let mut i = 0;
         while i + needle.len() <= chars.len() {
             let bounded = !whole_words || (!word(i.checked_sub(1).and_then(|p| chars.get(p))) && !word(chars.get(i + needle.len())));
-            if bounded && chars[i..i + needle.len()].iter().map(|c| c.0).eq(needle.iter().copied()) {
+            // A syllable without a final consonant (가) must not match the prefix of 각.
+            let complete_syllable = !(needle.last().is_some_and(|c| matches!(u32::from(*c), 0x1161..=0x1175))
+                && chars.get(i + needle.len()).is_some_and(|c| matches!(u32::from(c.0), 0x11a8..=0x11c2)));
+            if bounded && complete_syllable && chars[i..i + needle.len()].iter().map(|c| c.0).eq(needle.iter().copied()) {
                 let start = chars[i].1;
                 let end = chars[i + needle.len() - 1].1 + 1;
                 out.push(start..end);
@@ -1780,6 +1783,21 @@ mod tests {
         }
         // A 90° page: the view's top-right corner is the upright top-left.
         assert_eq!(to_upright([290.0, 0.0, 300.0, 10.0], 1, 300.0, 200.0), [0.0, 0.0, 10.0, 10.0]);
+    }
+
+    #[test]
+    fn korean_search_preserves_glyph_ranges_and_syllable_boundaries() {
+        let mut glyphs = Vec::new();
+        word(&mut glyphs, "한글가각", 10.0, 10.0, 10.0);
+        let page = layout(glyphs);
+        assert_eq!(page.find("한글"), vec![0..2]);
+        assert_eq!(page.find("가"), vec![2..3]);
+        assert_eq!(page.find("각"), vec![3..4]);
+        assert_eq!(page.find_opts("한글", true, false), vec![0..2]);
+        let mut glyphs = Vec::new();
+        word(&mut glyphs, "한글", 10.0, 10.0, 10.0);
+        let page = layout(glyphs);
+        assert_eq!(page.find("한글"), vec![0..6]);
     }
 
     #[test]

@@ -229,7 +229,7 @@ pub fn check(root: &Path, m: &Manifest, repo_files: &[String], lock: &BTreeSet<(
     let mut seen = BTreeSet::new();
     // Kinds that may never come from Adobe (AGENTS.md §1.1): visual design, and UI translations
     // (which must be clean-room, never taken from a product's string tables).
-    let visual = |kind: &str| matches!(kind, "icon" | "image" | "font" | "logo" | "cursor" | "video" | "translation");
+    let visual = |kind: &str| matches!(kind, "icon" | "image" | "font" | "korean-font" | "logo" | "cursor" | "video" | "translation");
     let licence_ok = |what: &str, licence: &str, problems: &mut Vec<String>| {
         for id in licence_ids(licence) {
             if !ALLOWED_LICENCES.contains(&id) {
@@ -352,6 +352,57 @@ pub fn models(args: &[String]) -> Result<()> {
         println!("models: {}", p.display());
     }
     std::fs::write(dir.join("ATTRIBUTION.txt"), models_attribution(&m))?;
+    Ok(())
+}
+
+/// Install the Korean face outside the source checkout, preserving other manifest entries.
+/// The font and its licence both use the pinned hashes in ATTRIBUTION.toml.
+pub fn korean_fonts(args: &[String]) -> Result<()> {
+    let [dir] = args else { bail!("usage: cargo xtask korean-fonts <external craft-fonts directory>") };
+    let root = root().canonicalize()?;
+    let dir = PathBuf::from(dir);
+    std::fs::create_dir_all(&dir)?;
+    let dir = dir.canonicalize()?;
+    if dir.starts_with(&root) {
+        bail!("font assets must live outside the PdfCraft checkout (AGENTS.md §1.4)");
+    }
+    let manifest = load(&root)?;
+    let fonts = dir.join("fonts");
+    let entries: Vec<_> = manifest.fetched.iter().filter(|f| f.kind == "korean-font").collect();
+    if entries.len() != 1 {
+        bail!("expected one attributed Korean font");
+    }
+    let entry = entries[0];
+    let path = fonts.join("manifest.txt");
+    let mut text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.into()),
+    };
+    let line = format!(
+        "Nanum Gothic | Regular | fonts/{} | Hang,Latn | OFL-1.1 | fonts/{}.LICENCE.txt | {} | {}",
+        entry.file, entry.file, entry.sha256, entry.source
+    );
+    if text.lines().any(|l| l.starts_with("Nanum Gothic |") && l != line) {
+        bail!("the build input already declares a different Nanum Gothic face; use another directory");
+    }
+    fetch_all(&manifest, &fonts, "korean-font")?;
+    if !text.lines().any(|l| l == line) {
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&line);
+        text.push('\n');
+        std::fs::write(&path, text)?;
+    }
+    std::fs::write(
+        dir.join("KOREAN-ATTRIBUTION.txt"),
+        format!(
+            "{}\nby {}\n{}\n{}; see fonts/{}.LICENCE.txt\nUnmodified font.\n",
+            entry.title, entry.author, entry.source, entry.licence, entry.file
+        ),
+    )?;
+    println!("Korean font verified. Set CRAFT_FONTS_DIR={} and PDFCRAFT_KOREAN_REQUIRED=1 before building.", dir.display());
     Ok(())
 }
 

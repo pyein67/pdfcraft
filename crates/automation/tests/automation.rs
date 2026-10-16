@@ -2723,9 +2723,17 @@ fn creating_from_text_refuses_what_the_font_cannot_draw() {
     // WinAnsi characters, line breaks and tabs are still fine.
     let d = ok(&mut a, "doc_create", json!({ "from": "text", "text": "Price: 5 € at café\r\n\tnext\u{c}page two" }))["doc"].as_u64().unwrap();
     assert_eq!(page_text(&mut a, d).len(), 2);
-    // #959: page_add_text refuses it too.
+    // #959: Add Text still refuses a character it has no face for. Korean-enabled builds
+    // now embed Nanum Gothic instead; verify the actual drawn/searchable text in that case.
     let doc = ok(&mut a, "doc_create", json!({ "from": "blank" }))["doc"].as_u64().unwrap();
-    refused(a.call("page_add_text", &json!({ "doc": doc, "page": 1, "text": "ABC 제안서 시험", "at": [20, 20] })));
+    let args = json!({ "doc": doc, "page": 1, "text": "ABC 제안서 시험", "at": [20, 20] });
+    if pdfcraft_fonts::korean::document_font().is_some() {
+        ok(&mut a, "page_add_text", args);
+        assert!(page_text(&mut a, doc)[0].contains("ABC 제안서 시험"));
+        assert_eq!(ok(&mut a, "text_find", json!({"doc":doc,"query":"제안서"}))["count"], 1);
+    } else {
+        refused(a.call("page_add_text", &args));
+    }
 }
 
 #[test]
@@ -5716,4 +5724,85 @@ fn absolute_gotor_consent_does_not_bypass_validation_or_passwords() {
     let opened = ok(&mut a, "link_open", json!({ "doc": doc, "page": 1, "index": 1, "allow_absolute": true, "password": "secret" }));
     assert_eq!(opened["document"]["encrypted"], true);
     assert_eq!(opened["destination_applied"], true);
+}
+
+/// The Text box Post action uses this same AddAnnotation path. Test the saved appearance,
+/// not just /Contents: keeping Unicode metadata alone used to hide a permanent `???` drawing.
+#[test]
+fn korean_text_box_post_save_reopen_search_and_render() {
+    if !pdfcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hang")) {
+        assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none(), "Korean font required for this test");
+        eprintln!("skipping Korean regression: set CRAFT_FONTS_DIR and PDFCRAFT_KOREAN_REQUIRED=1");
+        return;
+    }
+    let dir = workdir("korean-textbox");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    let korean = "한글 입력 저장 검색 ABC 123";
+    let posted = ok(
+        &mut a,
+        "comment_add",
+        json!({"doc":doc,"page":1,"type":"textbox",
+        "rect":[5,200,195,290],"contents":korean,"font_size":12}),
+    );
+    assert!(!posted.to_string().contains("undrawn"), "{posted}");
+    assert_eq!(ok(&mut a, "text_find", json!({"doc":doc,"query":"한글"}))["count"], 1);
+    ok(&mut a, "doc_save", json!({"doc":doc,"path":"korean.pdf"}));
+    let mut reopened = auto(&dir);
+    let doc = ok(&mut reopened, "doc_open", json!({"path":"korean.pdf"}))["doc"].as_u64().unwrap();
+    assert!(page_text(&mut reopened, doc)[0].contains(korean));
+    for query in ["입력", "저장", "검색", "한글", "ABC"] {
+        assert_eq!(ok(&mut reopened, "text_find", json!({"doc":doc,"query":query}))["count"], 1, "{query}");
+    }
+    let image = reopened.call("page_render", &json!({"doc":doc,"page":1,"dpi":72})).unwrap();
+    let Content::Png { data, width, height } = &image[0] else { panic!("expected PNG") };
+    assert_eq!((*width, *height), (200, 300));
+    assert_eq!(&data[..8], b"\x89PNG\r\n\x1a\n");
+    let bytes = std::fs::read(dir.join("korean.pdf")).unwrap();
+    let saved = pdfcraft_cos::Document::open(std::sync::Arc::new(bytes)).unwrap();
+    assert!(saved.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.contains(b"FontFile2"))), "TrueType program must be embedded");
+    assert!(saved.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.contains(b"ToUnicode"))), "Unicode mapping must be saved");
+}
+
+#[test]
+fn korean_added_text_embeds_font_and_keeps_other_items_after_edit() {
+    if pdfcraft_fonts::CRAFT_FONTS.iter().all(|f| !f.covers("Hang")) {
+        assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none());
+        return;
+    }
+    let dir = workdir("korean-added-text");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    for (text, y) in [("첫번째 한글 ABC", 20), ("두번째 한글 123", 70)] {
+        ok(&mut a, "page_add_text", json!({"doc":doc,"page":1,"text":text,"rect":[5,y,195,y+40],"size":12}));
+    }
+    ok(&mut a, "content_update", json!({"doc":doc,"page":1,"index":1,"text":"첫번째 수정한글 ABC"}));
+    ok(&mut a, "edit_undo", json!({"doc":doc}));
+    ok(&mut a, "edit_redo", json!({"doc":doc}));
+    ok(&mut a, "doc_save", json!({"doc":doc,"path":"added.pdf"}));
+    let mut reopened = auto(&dir);
+    let doc = ok(&mut reopened, "doc_open", json!({"path":"added.pdf"}))["doc"].as_u64().unwrap();
+    assert_eq!(ok(&mut reopened, "text_find", json!({"doc":doc,"query":"한글"}))["count"], 2);
+    let text = page_text(&mut reopened, doc)[0].clone();
+    assert!(text.contains("첫번째 수정한글 ABC") && text.contains("두번째 한글 123"), "{text}");
+}
+
+#[test]
+fn korean_existing_text_replacement_survives_save_and_search() {
+    if pdfcraft_fonts::CRAFT_FONTS.iter().all(|f| !f.covers("Hang")) {
+        assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none());
+        return;
+    }
+    let dir = workdir("korean-existing-text");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    ok(&mut a, "text_edit", json!({"doc":doc,"page":1,"paragraph":1,"text":"기존 한글 수정"}));
+    ok(&mut a, "doc_save", json!({"doc":doc,"path":"replaced.pdf"}));
+    let mut reopened = auto(&dir);
+    let doc = ok(&mut reopened, "doc_open", json!({"path":"replaced.pdf"}))["doc"].as_u64().unwrap();
+    let extracted = page_text(&mut reopened, doc)[0].split_whitespace().collect::<Vec<_>>().join(" ");
+    assert_eq!(extracted, "기존 한글 수정");
+    for query in ["한글", "한글 수정"] {
+        assert_eq!(ok(&mut reopened, "text_find", json!({"doc":doc,"query":query}))["count"], 1);
+    }
 }
