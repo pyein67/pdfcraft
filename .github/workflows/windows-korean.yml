@@ -21,6 +21,10 @@ on:
       - 'packaging/windows/build-korean.ps1'
       - '.github/workflows/windows-korean.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

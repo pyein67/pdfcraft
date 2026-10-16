@@ -44,7 +44,7 @@ in `build-korean.ps1`. The build fails if any required check fails.
 Local validation before push: the new ICO/frame test passed; the existing Korean UI
 library (375 passed, 1 existing ignored), comments (35), control (58) and font (11)
 tests passed with the Korean font input. The comments suite includes English/Korean
-input/paste/Post/save/reopen/Ctrl+F. App all-target Clippy with `-D warnings`, formatting,
+input/paste/Post/save/reopen/Ctrl+F. App all-target Clippy with `-D warnings` on Rust 1.95 and 1.99, formatting,
 asset hashes, dependency layers and wasm UI check passed (wasm has 3 existing warnings).
 The PowerShell resource checker passed a synthetic PE and rejected its corrupted icon.
 All Windows packaging scripts parsed using PowerShell 7.4.6 on Linux.
@@ -62,3 +62,7 @@ with C++, the Windows SDK and Git installed:
 ```
 
 History: 2026-10-16 — Windows-only supplied icon integration and native packaging probes.
+
+The first CI attempt caught Rust 1.99's `chunks_exact_to_as_chunks` lint in the new
+icon test; the test now uses `as_chunks`. Repeated branch builds cancel older in-progress
+builds to avoid publishing obsolete icon artifacts.

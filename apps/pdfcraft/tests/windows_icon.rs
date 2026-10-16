@@ -6,7 +6,7 @@ const PNG: &[u8] = include_bytes!("../../../assets/app-icon/korean/pdfcraft-pdf-
 fn supplied_windows_icon_has_all_shell_sizes_and_identical_window_frame() {
     assert_eq!(&ICO[..6], &[0, 0, 1, 0, 7, 0]);
     let mut sizes = Vec::new();
-    for directory in ICO[6..118].chunks_exact(16) {
+    for directory in ICO[6..118].as_chunks::<16>().0 {
         let size = u32::from_le_bytes(directory[8..12].try_into().unwrap()) as usize;
         let offset = u32::from_le_bytes(directory[12..16].try_into().unwrap()) as usize;
         let frame = ICO.get(offset..offset.checked_add(size).unwrap()).unwrap();
