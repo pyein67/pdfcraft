@@ -114,6 +114,23 @@ jobs:
             Write-Output "::error title=Native print API output::$message"
             throw
           }
+      - name: Compare original good and bad native virtual PDF output
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $errors = @()
+          foreach ($label in @('good','bad')) {
+            try {
+              ./packaging/windows/Test-PrintToPdfRegression.ps1 -Cli (Join-Path $env:RUNNER_TEMP "$label/pdfcraft-cli.exe") -ReportDirectory (Join-Path $env:RUNNER_TEMP "baseline-$label") -Label $label
+            } catch {
+              $text = $_ | Out-String
+              $errors += $text
+              if ($text.Length -gt 3400) { $text = $text.Substring($text.Length - 3400) }
+              $message = $text.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+              Write-Output "::error title=Original native virtual output $label::$message"
+            }
+          }
+          if ($errors.Count) { throw 'Original virtual PDF baseline probe failed; inspect reports.' }
       - name: Keep native and regression diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -123,10 +140,15 @@ jobs:
             native-print.log
             good-pe.json
             bad-pe.json
+            ${{ runner.temp }}/baseline-good/*.json
+            ${{ runner.temp }}/baseline-good/*.txt
+            ${{ runner.temp }}/baseline-bad/*.json
+            ${{ runner.temp }}/baseline-bad/*.txt
           if-no-files-found: ignore
   windows-x64:
     permissions:
       contents: write
+      actions: read
     runs-on: windows-2022
     timeout-minutes: 120
     steps:
@@ -136,7 +158,8 @@ jobs:
         run: rustup toolchain install 1.95.0 --profile minimal
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
-          key: windows-print-fix-rust-1.95
+          key: windows-print-fix-rust-1.95-complete-v2
+          cache-all-crates: true
           cache-on-failure: true
       - name: Validate Windows packaging scripts
         shell: pwsh
@@ -146,11 +169,38 @@ jobs:
             [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors)
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           }
+      - name: Verify whether the exact Korean-tested source can be reused
+        id: verified_tests
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          'reuse=false' >> $env:GITHUB_OUTPUT
+          $verified = '39e85680451e61e27de690cc407ddac6b71e2c6e'
+          git fetch --no-tags --depth=1 origin $verified
+          if ($LASTEXITCODE) { Write-Output 'Test source could not be compared; full Korean tests will run.'; exit 0 }
+          $allowed = @('.github/workflows/windows-print-fix.yml','packaging/windows/Test-PrintToPdfRegression.ps1','docs/windows-print-fix.md')
+          $changed = @(git diff --name-only $verified HEAD)
+          if ($LASTEXITCODE -or @($changed | Where-Object { $_ -notin $allowed }).Count) { Write-Output 'Code or build-input changes require full Korean tests.'; exit 0 }
+          $run = gh api repos/pyein67/pdfcraft/actions/runs/39185795024 | ConvertFrom-Json
+          if ($LASTEXITCODE -or $run.head_sha -ne $verified) { Write-Output 'Test run identity could not be verified; full Korean tests will run.'; exit 0 }
+          $jobs = gh api repos/pyein67/pdfcraft/actions/runs/39185795024/jobs | ConvertFrom-Json
+          if ($LASTEXITCODE) { Write-Output 'Test outcome could not be verified; full Korean tests will run.'; exit 0 }
+          $step = ($jobs.jobs | Where-Object name -eq 'windows-x64').steps | Where-Object name -eq 'Build and test PdfCraft with Korean font embedding'
+          if ($step.conclusion -ne 'success') { Write-Output 'Successful Korean source-test evidence missing; full tests will run.'; exit 0 }
+          'reuse=true' >> $env:GITHUB_OUTPUT
+          Write-Output "::notice title=Verified Korean test reuse::Exact program, test, font, lockfile, configured compiler and build inputs match $verified, whose core, automation, Korean UI and font tests passed in run 39185795024. Only the CI probe/workflow/documentation changed. Full workspace CI, native GUI checks and native PDF output probes remain enabled."
       - name: Build and test PdfCraft with Korean font embedding
+        id: korean_build
         shell: pwsh
         run: |
           try {
-            ./packaging/windows/build-korean.ps1 *>&1 | Tee-Object -FilePath korean-build.log
+            if ('${{ steps.verified_tests.outputs.reuse }}' -eq 'true') {
+              ./packaging/windows/build-korean.ps1 -SkipTests *>&1 | Tee-Object -FilePath korean-build.log
+            } else {
+              ./packaging/windows/build-korean.ps1 *>&1 | Tee-Object -FilePath korean-build.log
+            }
           } catch {
             $_ | Out-String | Add-Content korean-build.log
             '### Korean build failure' | Add-Content $env:GITHUB_STEP_SUMMARY
@@ -184,14 +234,24 @@ jobs:
             ${{ runner.temp }}/print-to-pdf-probe/*.json
             ${{ runner.temp }}/print-to-pdf-probe/*.txt
           if-no-files-found: ignore
-      - name: Upload failed Korean build log
-        if: failure()
+      - name: Keep the Korean build log
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: korean-build-log
           path: korean-build.log
           if-no-files-found: ignore
+      - name: Record the actual native PDF probe outcome in the preview
+        if: ${{ !cancelled() && steps.korean_build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'print-to-pdf-probe/print-to-pdf-result.json'
+          $output = Join-Path $env:GITHUB_WORKSPACE 'target/x86_64-pc-windows-msvc/release/NATIVE-PRINT-PROBE.json'
+          if (Test-Path $report) { Copy-Item $report $output } else {
+            @{ Status = 'NOT_RUN'; Reason = 'No native probe report was produced; inspect the workflow outcome.' } | ConvertTo-Json | Set-Content $output -Encoding utf8
+          }
       - name: Upload unsigned x64 executables and font licence
+        if: ${{ !cancelled() && steps.korean_build.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: pdfcraft-0.8.0-windows-x64-korean-ui-print-fix-unsigned
@@ -205,27 +265,31 @@ jobs:
             target/x86_64-pc-windows-msvc/release/WINDOWS-ICON-README.md
             target/x86_64-pc-windows-msvc/release/Collect-PrintDiagnostics.ps1
             target/x86_64-pc-windows-msvc/release/WINDOWS-PRINT-FIX.md
+            target/x86_64-pc-windows-msvc/release/NATIVE-PRINT-PROBE.json
             target/x86_64-pc-windows-msvc/release/NOTICE
             target/x86_64-pc-windows-msvc/release/LICENSE-MIT
             target/x86_64-pc-windows-msvc/release/LICENSE-APACHE
             target/x86_64-pc-windows-msvc/release/craft-fonts-licences/**
           if-no-files-found: error
       - name: Publish print-fix diagnostic preview download
+        if: ${{ !cancelled() && steps.korean_build.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/fix/windows-print-crash' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $root = Join-Path $env:GITHUB_WORKSPACE 'target/x86_64-pc-windows-msvc/release'
-          $files = @('pdfcraft.exe','pdfcraft-cli.exe','NanumGothic-OFL.txt','KOREAN-ATTRIBUTION.txt','ATTRIBUTION.md','Register-PdfCraft.ps1','WINDOWS-ICON-README.md','Collect-PrintDiagnostics.ps1','WINDOWS-PRINT-FIX.md','NOTICE','LICENSE-MIT','LICENSE-APACHE','craft-fonts-licences') | ForEach-Object { Join-Path $root $_ }
+          $files = @('pdfcraft.exe','pdfcraft-cli.exe','NanumGothic-OFL.txt','KOREAN-ATTRIBUTION.txt','ATTRIBUTION.md','Register-PdfCraft.ps1','WINDOWS-ICON-README.md','Collect-PrintDiagnostics.ps1','WINDOWS-PRINT-FIX.md','NATIVE-PRINT-PROBE.json','NOTICE','LICENSE-MIT','LICENSE-APACHE','craft-fonts-licences') | ForEach-Object { Join-Path $root $_ }
           $zip = Join-Path $env:RUNNER_TEMP 'pdfcraft-0.8.0-windows-x64-korean-ui-print-fix-unsigned.zip'
           Compress-Archive -Path $files -DestinationPath $zip
-          $tag = 'v0.8.0-print-fix-' + $env:GITHUB_SHA.Substring(0,8)
+          $notes = Join-Path $env:RUNNER_TEMP 'print-preview-notes.md'
+          @((Get-Content docs/windows-print-fix.md -Raw),'','## Native virtual PDF output probe','```json',(Get-Content (Join-Path $root 'NATIVE-PRINT-PROBE.json') -Raw),'```','Physical Samsung output remains unverified. A failed probe keeps the workflow failed; this download is a diagnostic preview.') | Set-Content $notes -Encoding utf8
+          $tag = 'v0.8.0-print-fix-'  + $env:GITHUB_SHA.Substring(0,8)
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip --clobber
           } else {
-            gh release create $tag $zip --target $env:GITHUB_SHA --title 'PdfCraft Windows print-fix diagnostic preview' --notes-file docs/windows-print-fix.md --prerelease
+            gh release create $tag $zip --target $env:GITHUB_SHA --title 'PdfCraft Windows print-fix diagnostic preview' --notes-file $notes --prerelease
           }
           if ($LASTEXITCODE) { throw 'Preview release upload failed' }
           Write-Output "::notice title=Print-fix preview ZIP::https://github.com/pyein67/pdfcraft/releases/download/$tag/$(Split-Path $zip -Leaf)"

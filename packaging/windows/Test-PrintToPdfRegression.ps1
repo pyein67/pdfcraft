@@ -1,5 +1,5 @@
 # CI-only native API probe. Uses a temporary file-port queue, never a physical printer/default.
-param([Parameter(Mandatory)][string]$Cli, [Parameter(Mandatory)][string]$ReportDirectory)
+param([Parameter(Mandatory)][string]$Cli, [Parameter(Mandatory)][string]$ReportDirectory, [string]$Label = 'current')
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force $ReportDirectory | Out-Null
 $ReportDirectory = (Resolve-Path $ReportDirectory).Path
@@ -33,13 +33,42 @@ foreach ($case in $cases) {
     $process = Start-Process -FilePath $Cli -ArgumentList @('run','--script',('"' + $script + '"'),'--root',('"' + $ReportDirectory + '"')) -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
     if (!$process.WaitForExit(180000)) { Stop-Process -Id $process.Id -Force; throw 'Print to PDF native call timed out (3 minutes).' }
     if ($process.ExitCode -ne 0) { throw "Print to PDF exit $($process.ExitCode): $(Get-Content $stderr -Raw)" }
+    # Submission completion is not driver-file completion. A file can exist while its
+    # writer is still producing the cross-reference table. Wait for a real reopen, not existence.
     $until = (Get-Date).AddSeconds(30)
-    while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $until) { Start-Sleep -Milliseconds 100 }
-    $opened = & $Cli run doc_open "path=$output" --root $ReportDirectory | ConvertFrom-Json
-    if ($LASTEXITCODE -or $opened.pages -ne $case[1]) { throw 'Printed PDF could not be reopened with the expected page count.' }
-    $results += @{ Case = $case[0]; Status = 'OUTPUT_REOPENED'; Pages = $opened.pages }
+    $attempts = 0
+    $opened = $null
+    $openExit = $null
+    $lastOpen = ''
+    $reopenOut = Join-Path $ReportDirectory ($case[0] + '-reopen-stdout.txt')
+    $reopenErr = Join-Path $ReportDirectory ($case[0] + '-reopen-stderr.txt')
+    do {
+      if ((Test-Path -LiteralPath $output) -and (Get-Item -LiteralPath $output).Length -gt 0) {
+        $attempts++
+        $lastOpen = @(& $Cli run doc_open "path=$output" --root $ReportDirectory 2> $reopenErr) -join "`n"
+        $openExit = $LASTEXITCODE
+        Set-Content -LiteralPath $reopenOut -Value $lastOpen -Encoding utf8
+        if ($openExit -eq 0) {
+          try { $opened = ConvertFrom-Json -InputObject $lastOpen } catch { $opened = $null }
+          if ($opened -and $opened.pages -eq $case[1]) { break }
+        }
+      }
+      Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $until)
+    if (!$opened -or $opened.pages -ne $case[1]) {
+      $bytes = if (Test-Path -LiteralPath $output) { (Get-Item -LiteralPath $output).Length } else { 0 }
+      $header = ''
+      if ($bytes) {
+        $stream = [IO.File]::Open($output, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try { $first = [byte[]]::new(16); $count = $stream.Read($first,0,$first.Length); $header = [Convert]::ToHexString($first[0..($count-1)]) } finally { $stream.Dispose() }
+      }
+      $detail = if (Test-Path $reopenErr) { [IO.File]::ReadAllText($reopenErr) } else { 'No nonempty file appeared' }
+      throw "Native PDF reopen failed: label=$Label case=$($case[0]) expected=$($case[1]) observed=$($opened.pages) exit=$openExit attempts=$attempts bytes=$bytes header=$header stderr=$detail"
+    }
+    $results += @{ Build = $Label; Case = $case[0]; Status = 'OUTPUT_REOPENED'; Pages = $opened.pages; ReopenAttempts = $attempts }
+    Write-Output "::notice title=Native PDF output $Label $($case[0])::OUTPUT_REOPENED: $($opened.pages) pages; attempts=$attempts. Printed glyph appearance and physical paper output are unverified."
   } catch {
-    $results += @{ Case = $case[0]; Status = 'FAILED'; Error = $_.Exception.Message }
+    $results += @{ Build = $Label; Case = $case[0]; Status = 'FAILED'; Error = $_.Exception.Message }
   } finally {
     Get-PrintJob -PrinterName $name -ErrorAction SilentlyContinue | Remove-PrintJob -ErrorAction SilentlyContinue
     Remove-Printer -Name $name -ErrorAction SilentlyContinue

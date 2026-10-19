@@ -139,3 +139,32 @@ These are unmaintained-crate advisories in the existing Linux accessibility depe
 chain, not a new printing or icon dependency. The audit reports no safe upgrade;
 licenses, bans and sources pass. The notices are not suppressed and the pinned native
 printing dependencies are not upgraded during this regression investigation.
+
+## Verified native virtual-output baseline (2026-10-19)
+
+The original lion and red-icon ZIPs were downloaded again, their pinned hashes and source
+identities verified, and their existing CLI binaries each submitted English, Korean and
+three-page documents to the inbox Microsoft Print to PDF driver. All **six outputs reopened
+with the expected page counts**, in Actions run `39193660660`, job `117871648905`.
+This establishes virtual output on that CI host, not Samsung paper output or glyph appearance.
+The original native backend also passed the mandatory paused-queue API tests in run
+`39185795024`, job `117848039121`.
+
+Run `39185795024` successfully completed the Korean core/font, automation, UI/language-switch,
+Post/save/reopen/search tests, release compilation, and native icon/registration/GUI-launch
+checks. Its subsequent initial virtual-output probe tried to reopen a file as soon as it
+existed and reported “no readable page tree or cross-reference data”. The probe now waits up
+to 30 seconds for a nonempty file that actually reopens, preserving the page-count assertion
+and recording stdout, stderr, attempts and failure metadata. This is a test-harness correction,
+not a speculative rewrite of printing. Native driver PDFs remain private to the runner.
+
+A packaging/probe-only follow-up may reuse the successful Korean source-test step from
+`39e85680` only after Git proves that **every other tracked file is unchanged** and the GitHub
+API verifies the exact tested source and successful step. Any program/test/font/lockfile/build
+input change forces the full Korean tests. Full workspace CI, new-EXE icon/registration/GUI
+checks and real native virtual-output probes still run. The preview ZIP includes the actual
+`NATIVE-PRINT-PROBE.json`; failed probes keep a failing workflow outcome even when a compiled
+diagnostic preview is retained for investigation.
+
+PdfCraft logs are normally `%APPDATA%\PdfCraft\data\logs\pdfcraft.log`; a portable copy uses
+`PdfCraftData\logs\` beside its EXE. Preserve the current and rotated logs after a crash.
