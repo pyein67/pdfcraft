@@ -97,7 +97,9 @@ submission path without a Samsung device. Its logs are kept as `print-fix-native
 If a CI printer/GPU setup prevents submission, that failure must be reported, not called
 successful paper output. A separate native Microsoft Print to PDF probe attempts English, Korean and three-page
 output to temporary file ports and reopens the PDFs. Its JSON report distinguishes
-OUTPUT_VERIFIED, FAILED and NOT_RUN (missing CI driver). Real Samsung output must be listed
+OUTPUT_REOPENED, FAILED and NOT_RUN (missing CI driver). Native driver PDFs are not published without a font provenance audit; only JSON/text
+reports leave the runner. Reopened page count does not verify printed glyph appearance.
+Real Samsung output must be listed
 separately from both virtual PDF output and API/paused-queue tests. Windows Server 2022 CI is not Windows 10 hardware.
 
 ## Windows 10 acceptance and crash evidence

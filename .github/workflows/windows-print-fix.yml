@@ -190,7 +190,11 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: print-fix-microsoft-pdf-diagnostics
-          path: ${{ runner.temp }}/print-to-pdf-probe
+          # Native driver output can substitute installed proprietary fonts. Keep PDFs private
+          # to the ephemeral runner; publish only reports, never unaudited driver PDF assets.
+          path: |
+            ${{ runner.temp }}/print-to-pdf-probe/*.json
+            ${{ runner.temp }}/print-to-pdf-probe/*.txt
           if-no-files-found: ignore
       - name: Upload failed Korean build log
         if: failure()

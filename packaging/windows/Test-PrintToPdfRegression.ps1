@@ -37,7 +37,7 @@ foreach ($case in $cases) {
     while (!(Test-Path -LiteralPath $output) -and (Get-Date) -lt $until) { Start-Sleep -Milliseconds 100 }
     $opened = & $Cli run doc_open "path=$output" --root $ReportDirectory | ConvertFrom-Json
     if ($LASTEXITCODE -or $opened.pages -ne $case[1]) { throw 'Printed PDF could not be reopened with the expected page count.' }
-    $results += @{ Case = $case[0]; Status = 'OUTPUT_VERIFIED'; Pages = $opened.pages }
+    $results += @{ Case = $case[0]; Status = 'OUTPUT_REOPENED'; Pages = $opened.pages }
   } catch {
     $results += @{ Case = $case[0]; Status = 'FAILED'; Error = $_.Exception.Message }
   } finally {
