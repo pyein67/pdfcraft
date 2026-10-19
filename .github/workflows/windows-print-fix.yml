@@ -65,17 +65,8 @@ jobs:
           if ((Compare-Object $good.Imports $bad.Imports)) { throw ('DLL imports differ: good=' + ($good.Imports -join ',') + '; bad=' + ($bad.Imports -join ',')) }
           'Known-good and reported-bad binaries have matching architecture, subsystem, DLL imports and manifest. Their resource metadata is recorded separately. This is not a Samsung print reproduction.' >> $env:GITHUB_STEP_SUMMARY
           $planes = @($bad.IconGroups | ForEach-Object { $_.Images | ForEach-Object { $_.Planes } })
-          if (@($planes | Where-Object { $_ -ne 0 }).Count -eq 0) {
-            $probe = Join-Path $env:RUNNER_TEMP 'metadata-probe'
-            Copy-Item (Join-Path $env:RUNNER_TEMP 'bad') $probe -Recurse
-            ./packaging/windows/New-IconMetadataProbe.ps1 -Executable (Join-Path $env:RUNNER_TEMP 'bad/pdfcraft.exe') -Output (Join-Path $probe 'pdfcraft.exe') -Report metadata-probe.json
-            Copy-Item docs/windows-print-fix.md (Join-Path $probe 'WINDOWS-PRINT-FIX.md')
-            ./packaging/windows/test-korean-icons.ps1 -Executable (Join-Path $probe 'pdfcraft.exe')
-            Compress-Archive -Path (Join-Path $probe '*') -DestinationPath print-fix-icon-metadata-ab.zip
-          } else {
-            'Metadata-only A/B probe NOT created: the reported PE already has nonzero plane metadata. Do not blame source ICO plane words without matching binary evidence.' | Set-Content metadata-probe.txt
-            Write-Output '::notice title=Icon metadata hypothesis::The compiled bad PE does not have all-zero plane words; inspect bad-pe.json before attributing a crash to source ICO metadata.'
-          }
+          if ($planes.Count -ne 14 -or @($planes | Where-Object { $_ -ne 1 }).Count) { throw 'Unexpected baseline compiled icon metadata; revisit the documented finding.' }
+          Write-Output "::notice title=Binary regression comparison::Original ZIP identities and hashes verified; PE architecture, imports, manifest and version match. Bad EXE SHA256=$($bad.SHA256). All 14 compiled icon plane words are already 1. Source ICO plane-zero hypothesis ruled out; no metadata patch or A/B EXE is shipped. Samsung crash cause is unconfirmed."
       - name: Prepare Rust and the Korean font input
         shell: pwsh
         run: |
@@ -132,9 +123,6 @@ jobs:
             native-print.log
             good-pe.json
             bad-pe.json
-            metadata-probe.json
-            metadata-probe.txt
-            print-fix-icon-metadata-ab.zip
           if-no-files-found: ignore
   windows-x64:
     permissions:

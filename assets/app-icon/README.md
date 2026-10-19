@@ -57,12 +57,7 @@ cargo xtask assets        # then update the sha256 values in ATTRIBUTION.toml an
 
 ## Korean Windows build
 
-Windows uses the contributor-supplied GPT-generated PDF design in `korean/pdfcraft-pdf-icon-windows.ico`
+Windows uses the contributor-supplied GPT-generated PDF design in `korean/pdfcraft-pdf-icon.ico`
 for both EXE resource groups and installer shortcuts, plus its unchanged 256px PNG frame
 for the running window/taskbar. All original assets above remain as backups; Linux/macOS
 continue to use them. See [registration and validation](../../docs/windows-korean-icon.md).
-
-The print regression diagnostic preview normalizes only the seven ICO color-plane words
-from 0 to 1, matching the last working icon metadata. Every PNG frame is unchanged. The
-supplied `korean/pdfcraft-pdf-icon.ico` is preserved as the original backup. This metadata
-difference is not proof of the reported printer crash; see `docs/windows-print-fix.md`.

@@ -1,6 +1,6 @@
 # Native verification of the actual PE resource images and isolated PDF registration.
 param([Parameter(Mandatory)][string]$Executable,
-      [string]$Icon = (Join-Path $PSScriptRoot '../../assets/app-icon/korean/pdfcraft-pdf-icon-windows.ico'))
+      [string]$Icon = (Join-Path $PSScriptRoot '../../assets/app-icon/korean/pdfcraft-pdf-icon.ico'))
 $ErrorActionPreference = 'Stop'
 $Exe = (Resolve-Path -LiteralPath $Executable).Path
 [byte[]]$pe = [IO.File]::ReadAllBytes($Exe)

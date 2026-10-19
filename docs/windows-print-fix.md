@@ -33,26 +33,20 @@ and their original SHA-256 values. It records actual EXE hashes, imports, subsys
 flags, manifest hash, version information, icon directories and Win32 icon-loading results.
 Matching source build settings alone are not substituted for this binary inspection.
 
-The native diagnostic artifact also includes `print-fix-icon-metadata-ab.zip`: a copy of
-the reported bad release with **only 14 bytes** changed, the low byte of each of fourteen
-resource-group plane words. `metadata-probe.json` records both EXE hashes and file offsets;
-its script checks that every other EXE byte is unchanged. This optional A/B probe preserves
-the bad release's code, settings, PNG pixels and red icon, isolating the metadata hypothesis
-from recompilation and from the separate dialog fix. It is not the rebuilt preview and is
-not evidence of successful paper output. Only the user's same-printer A/B result can confirm
-or refute that hypothesis. The normal preview ZIP below is rebuilt from the modified source.
+Independent inspection of the original released ZIP (SHA-256
+`efe76c7f25c65fb23b5f1f876f09fd0e5b6677d42e310ba4ae4008bd789c5ce0`)
+confirms EXE SHA-256 `81d86f4a135edc4878050b7922f05f8e9636ea8798d76e5493ba2ecafce576a0`
+and that **all fourteen compiled RT_GROUP_ICON plane words are already 1**.
+The uploaded ICO has seven zero plane words, but the resource compiler normalizes them.
+Both old and new icons use PNG frames and the supplied PNG CRCs are valid. A zero-plane
+source-header hypothesis was investigated and **ruled out for this actual released EXE**.
+An experimental metadata-only probe refused this real input as designed. The speculative
+normalized ICO, its tests and its probe script were removed; no icon or build-resource
+change is included in the final source. The original red icon, pixels, resource IDs,
+window/taskbar PNG, PDF association and backups are preserved exactly.
 
 ## Narrow changes in this preview
 
-* All seven supplied ICO entries have `wPlanes=0`; the previous working lion and document
-  icons have `wPlanes=1`. Both versions use PNG frames, so “PNG versus DIB” is NOT the
-  observed difference. The supplied PNGs have valid CRCs. Some PNG icon loaders accept zero;
-  this is **not evidence that the icon caused an access violation**.
-* A separate Windows ICO copy normalizes just these seven plane words to 1. All offsets,
-  dimensions and PNG bytes remain identical. The original uploaded ICO and lion icons stay
-  in the repository. Window/taskbar PNG pixels, red PDF design, PDF association and resource
-  IDs remain unchanged. Unit tests and the native PE check enforce the single-plane metadata
-  and exact frame bytes. Win32's icon loader is exercised on the built EXE.
 * Printer discovery was already asynchronous. The first unknown selection (`None`) was
   rendered as “Save as PDF”, then replaced by the discovered default. Clicking that already
   selected `None` value did not mark an explicit user choice; reopening also reset the choice.
@@ -84,8 +78,7 @@ in it; an event/dump is needed to distinguish application, Windows rendering and
 
 ## Tests and limits
 
-The icon metadata policy test fails on the previous red ICO and passes on the normalized
-copy. A separate test proves that only plane words changed. UI tests cover delayed discovery,
+UI tests cover delayed discovery,
 default selection, explicitly choosing PDF while pending, reopening, cancellation and PDF
 save failures. A Korean automation test creates and imposes three pages, reopens the result
 and checks search, embedded TrueType and ToUnicode. Existing Korean input/Post/save/reopen/
@@ -136,3 +129,13 @@ Reproduce once and keep the dump private: full dumps can contain PDF contents an
 information. In WinDbg, `!analyze -v`, `.ecxr`, `k` and `lm` identify the exception thread,
 module and stack. Share the redacted stack/module/code first. Do not upload full dumps to a
 public issue. Remove only the settings you added, or restore the original exported settings.
+
+## Separate baseline CI advisory failure
+
+The unchanged Cargo.lock and advisory policy reproduce three maintenance notices under
+`cargo deny --all-features check`: RUSTSEC-2026-0370 (`zvariant`),
+RUSTSEC-2026-0371 (`zbus_names`) and RUSTSEC-2026-0372 (`zvariant_derive`).
+These are unmaintained-crate advisories in the existing Linux accessibility dependency
+chain, not a new printing or icon dependency. The audit reports no safe upgrade;
+licenses, bans and sources pass. The notices are not suppressed and the pinned native
+printing dependencies are not upgraded during this regression investigation.
