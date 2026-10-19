@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/korean-ui-localization, feat/korean-windows-icon]
+    branches: [main, feat/korean-ui-localization, feat/korean-windows-icon, fix/windows-print-crash]
   pull_request:
   workflow_dispatch:
   schedule:

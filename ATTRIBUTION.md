@@ -4,7 +4,7 @@
 
 Every asset PdfCraft includes, bundles or uses to build its published material, with its author, source and licence. The policy is in [AGENTS.md](AGENTS.md) §1. The machine-readable list, with SHA-256 hashes, is [ATTRIBUTION.toml](ATTRIBUTION.toml). Licence texts are kept beside the assets and summarised in [NOTICE](NOTICE).
 
-## In this repository (273)
+## In this repository (274)
 
 | Asset | Title | Author | Licence | Source | Used for |
 |---|---|---|---|---|---|
@@ -281,6 +281,7 @@ Every asset PdfCraft includes, bundles or uses to build its published material, 
 | `crates/ui-egui/src/i18n/ko.tsv` | Korean interface translation catalog | PdfCraft contributors | MIT OR Apache-2.0 | Contributor-original: clean-room translations of PdfCraft English UI labels | Korean UI strings compiled into the existing localization registry |
 | `assets/app-icon/korean/pdfcraft-pdf-icon.ico` | Korean PdfCraft PDF icon | pyein67 (GPT-generated contribution) | MIT OR Apache-2.0 | Contributor-supplied GPT-generated icon; upload PdfCraft_Korean_PDF_Icon.ico; origin confirmed by contributor on 2026-10-16 | Windows executable resources 1 and 2; installer shortcuts and PDF association icon |
 | `assets/app-icon/korean/pdfcraft-pdf-icon-256.png` | Korean PdfCraft PDF icon (256px frame) | pyein67 (GPT-generated contribution) | MIT OR Apache-2.0 | Contributor-supplied GPT-generated icon; upload PdfCraft_Korean_PDF_Icon.ico; origin confirmed by contributor on 2026-10-16 | Windows window and taskbar icon; unchanged 256px PNG frame extracted from the supplied ICO |
+| `assets/app-icon/korean/pdfcraft-pdf-icon-windows.ico` | Korean PdfCraft PDF icon with canonical Windows plane metadata | pyein67 (GPT-generated contribution); PdfCraft contributors (metadata normalization) | MIT OR Apache-2.0 | Derived from contributor-supplied PdfCraft_Korean_PDF_Icon.ico: only seven ICO wPlanes directory words normalized from 0 to 1; all PNG frames unchanged | Windows EXE resources 1 and 2 and installer shortcuts; original supplied ICO retained as backup |
 
 ## Compiled in through dependencies (6)
 

@@ -1,5 +1,7 @@
 # PdfCraft roadmap
 
+> **Last reviewed:** 2026-10-19 · **Last updated:** 2026-10-19 · **Change:** minor (M10 Windows print regression investigation; Samsung output and native fault cause unverified; estimates unchanged)
+
 > **Last reviewed:** 2026-10-16 · **Last updated:** 2026-10-16 · **Change:** minor (M14 Korean UI; Windows 10 interactive acceptance pending; estimates unchanged)
 
 **Stage: alpha** · next: beta, ~26% (ready for real work 49% → 75%) and ~400–700 h away
@@ -152,6 +154,7 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 
 ## Progress log
 
+- **2026-10-19 (M10, Windows print regression):** Compared user-reported working `76dd98ef` with icon build `a49b1991`; bisect identifies `47b99dfe` as the production-change candidate, without a fabricated hardware verdict. Retained the original spooler, normalized ICO plane metadata without changing PNG pixels, fixed pending printer selection and added stage logs/diagnostics. See `docs/windows-print-fix.md`; native crash cause and Samsung output remain unverified. Estimates unchanged.
 - **2026-10-16 (M14, Windows PDF icon):** Contributor-supplied GPT-generated ICO wired to both Windows EXE icon groups, window/taskbar and installer shortcuts; originals retained. Optional ZIP registration preserves existing PDF defaults and exports previous registration. Native PE/registry/GUI probes added; Windows 10 Explorer acceptance remains manual. See `docs/windows-korean-icon.md`. Estimates unchanged.
 - **2026-10-16 (M14, Korean UI):** 2,592-entry clean-room catalog, Korean locale and calendar names reuse existing preference/Windows detection and English fallback. UI tests: 479 passed, 1 existing measurement probe ignored; English/Korean Post/save/reopen/Ctrl+F and 100/125/150% layout regressions pass. Embedded-font screenshots inspected; native Windows 10 interactive acceptance pending. See `docs/korean-ui-validation.md`. Estimates unchanged.
 

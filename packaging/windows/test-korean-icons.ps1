@@ -1,6 +1,6 @@
 # Native verification of the actual PE resource images and isolated PDF registration.
 param([Parameter(Mandatory)][string]$Executable,
-      [string]$Icon = (Join-Path $PSScriptRoot '../../assets/app-icon/korean/pdfcraft-pdf-icon.ico'))
+      [string]$Icon = (Join-Path $PSScriptRoot '../../assets/app-icon/korean/pdfcraft-pdf-icon-windows.ico'))
 $ErrorActionPreference = 'Stop'
 $Exe = (Resolve-Path -LiteralPath $Executable).Path
 [byte[]]$pe = [IO.File]::ReadAllBytes($Exe)
@@ -45,6 +45,7 @@ foreach ($groupId in @(1, 2)) {
   $count = U16 $ico 4
   if ((U16 $group 4) -ne $count) { throw "Icon group $groupId has wrong frame count." }
   for ($i = 0; $i -lt $count; $i++) {
+    if ((U16 $group (6 + 14 * $i + 4)) -ne 1) { throw "EXE group $groupId frame $i has noncanonical color planes." }
     $entry = 6 + 16 * $i
     $offset = U32 $ico ($entry + 12)
     $size = U32 $ico ($entry + 8)
@@ -56,6 +57,16 @@ foreach ($groupId in @(1, 2)) {
   }
 }
 Write-Output 'PASS: x64 EXE app and PDF resources contain all 7 original icon frames byte-for-byte.'
+Add-Type -AssemblyName System.Drawing
+$loadedIcon = [Drawing.Icon]::ExtractAssociatedIcon($Exe)
+if (!$loadedIcon) { throw 'Win32 could not load the executable icon.' }
+try {
+  $bitmap = $loadedIcon.ToBitmap()
+  try { if ($bitmap.Width -lt 16 -or $bitmap.Height -lt 16) { throw 'Win32 returned an invalid icon bitmap.' } }
+  finally { $bitmap.Dispose() }
+} finally { $loadedIcon.Dispose() }
+Write-Output 'PASS: the Windows icon loader produced a usable bitmap.'
+
 . (Join-Path $PSScriptRoot 'Register-PdfCraft.ps1')
 $testPath = 'Software\PdfCraftIconTests\' + [guid]::NewGuid().ToString()
 $root = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($testPath)

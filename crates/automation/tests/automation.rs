@@ -5806,3 +5806,25 @@ fn korean_existing_text_replacement_survives_save_and_search() {
         assert_eq!(ok(&mut reopened, "text_find", json!({"doc":doc,"query":query}))["count"], 1);
     }
 }
+
+#[test]
+fn korean_print_ready_pdf_preserves_unicode_fonts_and_three_pages() {
+    if !pdfcraft_fonts::CRAFT_FONTS.iter().any(|f| f.covers("Hang")) {
+        assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none());
+        return;
+    }
+    let dir = workdir("korean-print-ready");
+    let mut a = auto(&dir);
+    let id = ok(&mut a, "doc_create", json!({"from":"blank","pages":3,"width":612,"height":792}))["doc"].as_u64().unwrap();
+    for page in 1..=3 {
+        ok(&mut a, "page_add_text", json!({"doc":id,"page":page,"text":"한글 인쇄 시험 English 123","rect":[40,40,500,100],"size":14}));
+    }
+    ok(&mut a, "doc_print", json!({"doc":id,"paper":"Letter","layout":"actual","path":"print-ready.pdf"}));
+    let mut reopened = auto(&dir);
+    let printed = ok(&mut reopened, "doc_open", json!({"path":"print-ready.pdf"}))["doc"].as_u64().unwrap();
+    assert_eq!(ok(&mut reopened, "text_find", json!({"doc":printed,"query":"한글"}))["count"], 3);
+    let pdf = pdfcraft_cos::Document::open(std::sync::Arc::new(std::fs::read(dir.join("print-ready.pdf")).unwrap())).unwrap();
+    assert_eq!(pdfcraft_model::pages(&pdf).len(), 3);
+    assert!(pdf.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.contains(b"FontFile2"))));
+    assert!(pdf.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.contains(b"ToUnicode"))));
+}

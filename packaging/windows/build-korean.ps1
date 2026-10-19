@@ -35,7 +35,7 @@ try {
     Write-Output '::notice title=Korean build phase::Run automation tests'
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-automation --test automation }
     Write-Output '::notice title=Korean build phase::Run Korean localization, font, language-switch and Text box tests'
-    Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-ui-egui --lib --test fonts --test comments --test control }
+    Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-ui-egui --lib --test fonts --test comments --test control --test print }
   }
   Write-Output '::notice title=Korean build phase::Build the release desktop and CLI executables'
   Invoke-Checked { cargo +1.95.0 build --locked --release --target x86_64-pc-windows-msvc -p pdfcraft -p pdfcraft-cli }
@@ -47,6 +47,8 @@ try {
   Copy-Item (Join-Path $env:CRAFT_FONTS_DIR 'fonts/NanumGothic-Regular.ttf.LICENCE.txt') (Join-Path $Output 'NanumGothic-OFL.txt')
   Copy-Item (Join-Path $env:CRAFT_FONTS_DIR 'KOREAN-ATTRIBUTION.txt') $Output
   Copy-Item (Join-Path $Repo 'NOTICE') $Output
+  Copy-Item (Join-Path $PSScriptRoot 'Collect-PrintDiagnostics.ps1') $Output
+  Copy-Item (Join-Path $Repo 'docs/windows-print-fix.md') (Join-Path $Output 'WINDOWS-PRINT-FIX.md')
   Copy-Item (Join-Path $Repo 'ATTRIBUTION.md') $Output
   Copy-Item (Join-Path $PSScriptRoot 'Register-PdfCraft.ps1') $Output
   Copy-Item (Join-Path $Repo 'docs/windows-korean-icon.md') (Join-Path $Output 'WINDOWS-ICON-README.md')

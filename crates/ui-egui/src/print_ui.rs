@@ -256,9 +256,9 @@ impl PdfCraftApp {
         self.print_draft = PrintDraft {
             printers,
             printers_loading,
-            printer_picked: false,
+            printer_picked: keep.printer_picked,
             units: self.units,
-            printer: default,
+            printer: if keep.printer_picked { keep.printer.clone() } else { default },
             current_page: current,
             sheet: 0,
             selected,
@@ -339,6 +339,10 @@ impl PdfCraftApp {
     /// a preset path returns `true` once the save picker is showing; the file is written on a
     /// later frame, when the user has chosen where.
     pub fn print_now(&mut self) -> bool {
+        if self.print_draft.printers_loading && !self.print_draft.printer_picked {
+            self.notify(tl!("Looking for printers…").to_string());
+            return false;
+        }
         // What's typed in a form field is part of what's printed (#166).
         if !self.commit_form_typing() {
             return false;
@@ -354,6 +358,7 @@ impl PdfCraftApp {
             }
         };
         let name = doc.name.clone();
+        log::info!("print.prepare: {} selected pages, paper {:?}, orientation {:?}", settings.pages.len(), settings.paper, settings.orientation);
         let bytes = match self.session.print_pdf(id, &settings) {
             Ok(b) => b,
             Err(e) => {
@@ -386,7 +391,23 @@ impl PdfCraftApp {
         let (tx, rx) = std::sync::mpsc::channel();
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(spool::submit(&bytes, &job).map_err(|e| e.to_string()));
+            log::info!(
+                "print.submit.begin: pid {}, printer {:?}, {} bytes, copies {}, collate {}, duplex {:?}, grayscale {}, scaling {:?}",
+                std::process::id(),
+                job.printer,
+                bytes.len(),
+                job.copies,
+                job.collate,
+                job.duplex,
+                job.grayscale,
+                job.scaling
+            );
+            let result = spool::submit(&bytes, &job).map_err(|e| e.to_string());
+            match &result {
+                Ok(message) => log::info!("print.submit.end: {message}"),
+                Err(error) => log::error!("print.submit.error: {error}"),
+            }
+            let _ = tx.send(result);
             if let Some(ctx) = ctx {
                 ctx.request_repaint();
             }
@@ -664,7 +685,9 @@ pub(crate) fn body(
                 // The browser's print dialog sets copies, two-sided printing and colour itself.
                 let browser = d.printer.as_deref() == Some(crate::web_print::BROWSER_PRINTER);
                 ui.horizontal(|ui| {
-                    let shown = d.printer.as_deref().map_or_else(|| tl!("Save as PDF").to_string(), printer_label);
+                    let shown = if d.printers_loading && !d.printer_picked {
+                        tl!("Looking for printers…").to_string()
+                    } else { d.printer.as_deref().map_or_else(|| tl!("Save as PDF").to_string(), printer_label) };
                     egui::ComboBox::from_id_salt("printer").selected_text(shown).width(260.0).show_ui(ui, |ui| {
                         if d.printers_loading {
                             ui.add_enabled(false, egui::Label::new(tl!("Looking for printers…")));
@@ -676,9 +699,9 @@ pub(crate) fn body(
                             } else {
                                 name
                             };
-                            ui.selectable_value(&mut d.printer, Some(p.name.clone()), label);
+                            if ui.selectable_value(&mut d.printer, Some(p.name.clone()), label).clicked() { d.printer_picked = true; }
                         }
-                        ui.selectable_value(&mut d.printer, None, tl!("Save as PDF"));
+                        if ui.selectable_value(&mut d.printer, None, tl!("Save as PDF")).clicked() { d.printer_picked = true; }
                     });
                     let tip = if spool::HAS_PRINTER_PREFERENCES {
                         tl!("Opens the printer driver's preferences. They are saved for every print from this computer; the copies, two-sided, grayscale and paper chosen here still apply.")
@@ -1014,7 +1037,13 @@ pub(crate) fn body(
     let (mut go, mut cancel) = (false, false);
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         let label = if d.printer.is_some() { "Print" } else { "Save as PDF" };
-        if ui.add_enabled_ui(settings.is_ok() && !sheets.is_empty(), |ui| widgets::pill_button(ui, label, true)).inner.clicked() {
+        if ui
+            .add_enabled_ui(settings.is_ok() && !sheets.is_empty() && (!d.printers_loading || d.printer_picked), |ui| {
+                widgets::pill_button(ui, label, true)
+            })
+            .inner
+            .clicked()
+        {
             go = true;
         }
         if widgets::pill_button(ui, tl!("Cancel"), false).clicked() {

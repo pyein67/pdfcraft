@@ -1,5 +1,8 @@
 # Windows Korean UI PDF icon build
 
+Historical icon-build validation for commit a49b1991. The later print regression
+diagnostic preview uses a metadata-normalized ICO copy; see [print investigation](windows-print-fix.md).
+
 Updated: 2026-10-16. Based on Korean UI commit `76dd98efc4687a49cee5399c3539a82e58b09be6`.
 
 The contributor supplied `PdfCraft_Korean_PDF_Icon.ico` and confirmed that GPT generated it.

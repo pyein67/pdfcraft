@@ -11,15 +11,15 @@ mod windows_manifest;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=../../assets/app-icon/korean/pdfcraft-pdf-icon.ico");
+    println!("cargo:rerun-if-changed=../../assets/app-icon/korean/pdfcraft-pdf-icon-windows.ico");
     println!("cargo:rerun-if-changed=src/windows_manifest.rs");
     println!("cargo:rerun-if-env-changed=PDFCRAFT_REQUIRE_WINRES");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
     let mut res = winresource::WindowsResource::new();
-    res.set_icon("../../assets/app-icon/korean/pdfcraft-pdf-icon.ico")
-        .set_icon_with_id("../../assets/app-icon/korean/pdfcraft-pdf-icon.ico", "2")
+    res.set_icon("../../assets/app-icon/korean/pdfcraft-pdf-icon-windows.ico")
+        .set_icon_with_id("../../assets/app-icon/korean/pdfcraft-pdf-icon-windows.ico", "2")
         .set_manifest(windows_manifest::WINDOWS_MANIFEST)
         .set("ProductName", "PdfCraft")
         .set("FileDescription", "PdfCraft PDF workbench")

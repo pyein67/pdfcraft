@@ -1,0 +1,239 @@
+name: Windows x64 print-fix build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/windows-print-crash]
+  pull_request:
+    paths:
+      - 'crates/print/**'
+      - 'apps/pdfcraft-cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'apps/pdfcraft/**'
+      - 'assets/app-icon/**'
+      - 'packaging/windows/**'
+      - 'crates/engine/**'
+      - 'crates/fonts/**'
+      - 'crates/annot/**'
+      - 'crates/edit/**'
+      - 'crates/render/**'
+      - 'crates/ui-egui/**'
+      - 'crates/automation/**'
+      - 'xtask/**'
+      - 'ATTRIBUTION.toml'
+      - 'packaging/windows/build-korean.ps1'
+      - '.github/workflows/windows-print-fix.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  native-print-api:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Compare the last working and reported-regressing release binaries
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($build in @(
+            @('good', '12019784784', '76dd98efc4687a49cee5399c3539a82e58b09be6', '67530ac47db3e92db7bc1b836646c1cf6e0d1d1c977e3d21a4e9078b4b227c6a'),
+            @('bad', '12031331235', 'a49b1991c86fc57e750f31e68f5b2099c6bbb2ca', 'efe76c7f25c65fb23b5f1f876f09fd0e5b6677d42e310ba4ae4008bd789c5ce0'))) {
+            $metadata = gh api "repos/pyein67/pdfcraft/actions/artifacts/$($build[1])" | ConvertFrom-Json
+            if ($LASTEXITCODE -or $metadata.expired -or $metadata.workflow_run.head_sha -ne $build[2]) { throw 'Baseline artifact identity/availability check failed' }
+            $zip = Join-Path $env:RUNNER_TEMP ($build[0] + '.zip')
+            gh api "repos/pyein67/pdfcraft/actions/artifacts/$($build[1])/zip" > $zip
+            if ($LASTEXITCODE -or (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $build[3]) { throw 'Baseline ZIP hash mismatch' }
+            $folder = Join-Path $env:RUNNER_TEMP $build[0]
+            Expand-Archive $zip $folder
+            ./packaging/windows/Inspect-PrintRegression.ps1 -Executable (Join-Path $folder 'pdfcraft.exe') -Report ($build[0] + '-pe.json')
+          }
+          $good = Get-Content good-pe.json -Raw | ConvertFrom-Json
+          $bad = Get-Content bad-pe.json -Raw | ConvertFrom-Json
+          foreach ($field in @('Machine','Subsystem','SubsystemVersion','DllCharacteristics','ManifestSHA256','FileVersion','ProductName')) {
+            if ($good.$field -cne $bad.$field) { throw "Unexpected PE setting difference: $field; good=$($good.$field); bad=$($bad.$field)" }
+          }
+          if ((Compare-Object $good.Imports $bad.Imports)) { throw ('DLL imports differ: good=' + ($good.Imports -join ',') + '; bad=' + ($bad.Imports -join ',')) }
+          'Known-good and reported-bad binaries have matching architecture, subsystem, DLL imports and manifest. Their resource metadata is recorded separately. This is not a Samsung print reproduction.' >> $env:GITHUB_STEP_SUMMARY
+          $planes = @($bad.IconGroups | ForEach-Object { $_.Images | ForEach-Object { $_.Planes } })
+          if (@($planes | Where-Object { $_ -ne 0 }).Count -eq 0) {
+            $probe = Join-Path $env:RUNNER_TEMP 'metadata-probe'
+            Copy-Item (Join-Path $env:RUNNER_TEMP 'bad') $probe -Recurse
+            ./packaging/windows/New-IconMetadataProbe.ps1 -Executable (Join-Path $env:RUNNER_TEMP 'bad/pdfcraft.exe') -Output (Join-Path $probe 'pdfcraft.exe') -Report metadata-probe.json
+            Copy-Item docs/windows-print-fix.md (Join-Path $probe 'WINDOWS-PRINT-FIX.md')
+            ./packaging/windows/test-korean-icons.ps1 -Executable (Join-Path $probe 'pdfcraft.exe')
+            Compress-Archive -Path (Join-Path $probe '*') -DestinationPath print-fix-icon-metadata-ab.zip
+          } else {
+            'Metadata-only A/B probe NOT created: the reported PE already has nonzero plane metadata. Do not blame source ICO plane words without matching binary evidence.' | Set-Content metadata-probe.txt
+            Write-Output '::notice title=Icon metadata hypothesis::The compiled bad PE does not have all-zero plane words; inspect bad-pe.json before attributing a crash to source ICO metadata.'
+          }
+      - name: Prepare Rust and the Korean font input
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.95.0 --profile minimal
+          if ($LASTEXITCODE) { throw 'rustup failed' }
+          git clone --no-checkout https://github.com/storytold/craft-fonts ../craft-fonts-native
+          if ($LASTEXITCODE) { throw 'font clone failed' }
+          git -C ../craft-fonts-native checkout --detach 3d9ab3a132ed0eff457e424226a435a901da30d3
+          if ($LASTEXITCODE) { throw 'font checkout failed' }
+          cargo +1.95.0 run --locked --profile low-disk -p xtask -- korean-fonts ../craft-fonts-native
+          if ($LASTEXITCODE) { throw 'Korean font preparation failed' }
+          "CRAFT_FONTS_DIR=$((Resolve-Path ../craft-fonts-native).Path)" >> $env:GITHUB_ENV
+          'CRAFT_FONTS_REQUIRED=1' >> $env:GITHUB_ENV
+          'PDFCRAFT_KOREAN_REQUIRED=1' >> $env:GITHUB_ENV
+          'CARGO_BUILD_JOBS=2' >> $env:GITHUB_ENV
+          git clone --no-checkout https://github.com/storytold/craft-libs ../craft-print-test-source
+          if ($LASTEXITCODE) { throw 'native test source clone failed' }
+          git -C ../craft-print-test-source checkout --detach f03ec27ab2c405969428512178f746183cd55ca0
+          if ($LASTEXITCODE) { throw 'native test source checkout failed' }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: windows-print-api-rust-1.95
+          cache-on-failure: true
+      - name: Prepare isolated test printers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!(Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) { Add-PrinterDriver -Name 'Generic / Text Only' }
+      - name: Verify the original native print API
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            $env:CRAFT_PRINT_REQUIRE_QUEUE = '1'
+            cargo +1.95.0 test --locked --manifest-path ../craft-print-test-source/Cargo.toml -p craft-print --lib *>&1 | Tee-Object native-print.log
+            if ($LASTEXITCODE) { throw 'Original Windows printing API tests failed' }
+            'Original craft-print Windows API tests passed; no printer backend rewrite is included.' >> $env:GITHUB_STEP_SUMMARY
+            'Physical Samsung output and Microsoft Print to PDF output are NOT established by these shared API tests.' >> $env:GITHUB_STEP_SUMMARY
+          } catch {
+            $_ | Out-String | Add-Content native-print.log
+            $message = (Get-Content native-print.log -Tail 70) -join "`n"
+            if ($message.Length -gt 14000) { $message = $message.Substring($message.Length - 14000) }
+            $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Native print API output::$message"
+            throw
+          }
+      - name: Keep native and regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: print-fix-native-diagnostics
+          path: |
+            native-print.log
+            good-pe.json
+            bad-pe.json
+            metadata-probe.json
+            metadata-probe.txt
+            print-fix-icon-metadata-ab.zip
+          if-no-files-found: ignore
+  windows-x64:
+    permissions:
+      contents: write
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install the build toolchain
+        shell: pwsh
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: windows-print-fix-rust-1.95
+          cache-on-failure: true
+      - name: Validate Windows packaging scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem packaging/windows/*.ps1 | ForEach-Object {
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          }
+      - name: Build and test PdfCraft with Korean font embedding
+        shell: pwsh
+        run: |
+          try {
+            ./packaging/windows/build-korean.ps1 *>&1 | Tee-Object -FilePath korean-build.log
+          } catch {
+            $_ | Out-String | Add-Content korean-build.log
+            '### Korean build failure' | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
+            Get-Content korean-build.log -Tail 200 | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+            $message = (Get-Content korean-build.log -Tail 60) -join "`n"
+            if ($message.Length -gt 12000) { $message = $message.Substring($message.Length - 12000) }
+            $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Korean build output::$message"
+            throw
+          }
+      - name: Probe native Microsoft Print to PDF output
+        shell: pwsh
+        run: |
+          try {
+            ./packaging/windows/Test-PrintToPdfRegression.ps1 -Cli (Join-Path $env:GITHUB_WORKSPACE 'target/x86_64-pc-windows-msvc/release/pdfcraft-cli.exe') -ReportDirectory (Join-Path $env:RUNNER_TEMP 'print-to-pdf-probe')
+          } catch {
+            $message = ($_ | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Microsoft Print to PDF probe::$message"
+            throw
+          }
+      - name: Keep native PDF output probe results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: print-fix-microsoft-pdf-diagnostics
+          path: ${{ runner.temp }}/print-to-pdf-probe
+          if-no-files-found: ignore
+      - name: Upload failed Korean build log
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: korean-build-log
+          path: korean-build.log
+          if-no-files-found: ignore
+      - name: Upload unsigned x64 executables and font licence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pdfcraft-0.8.0-windows-x64-korean-ui-print-fix-unsigned
+          path: |
+            target/x86_64-pc-windows-msvc/release/pdfcraft.exe
+            target/x86_64-pc-windows-msvc/release/pdfcraft-cli.exe
+            target/x86_64-pc-windows-msvc/release/NanumGothic-OFL.txt
+            target/x86_64-pc-windows-msvc/release/KOREAN-ATTRIBUTION.txt
+            target/x86_64-pc-windows-msvc/release/ATTRIBUTION.md
+            target/x86_64-pc-windows-msvc/release/Register-PdfCraft.ps1
+            target/x86_64-pc-windows-msvc/release/WINDOWS-ICON-README.md
+            target/x86_64-pc-windows-msvc/release/Collect-PrintDiagnostics.ps1
+            target/x86_64-pc-windows-msvc/release/WINDOWS-PRINT-FIX.md
+            target/x86_64-pc-windows-msvc/release/NOTICE
+            target/x86_64-pc-windows-msvc/release/LICENSE-MIT
+            target/x86_64-pc-windows-msvc/release/LICENSE-APACHE
+            target/x86_64-pc-windows-msvc/release/craft-fonts-licences/**
+          if-no-files-found: error
+      - name: Publish print-fix diagnostic preview download
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:GITHUB_WORKSPACE 'target/x86_64-pc-windows-msvc/release'
+          $files = @('pdfcraft.exe','pdfcraft-cli.exe','NanumGothic-OFL.txt','KOREAN-ATTRIBUTION.txt','ATTRIBUTION.md','Register-PdfCraft.ps1','WINDOWS-ICON-README.md','Collect-PrintDiagnostics.ps1','WINDOWS-PRINT-FIX.md','NOTICE','LICENSE-MIT','LICENSE-APACHE','craft-fonts-licences') | ForEach-Object { Join-Path $root $_ }
+          $zip = Join-Path $env:RUNNER_TEMP 'pdfcraft-0.8.0-windows-x64-korean-ui-print-fix-unsigned.zip'
+          Compress-Archive -Path $files -DestinationPath $zip
+          $tag = 'v0.8.0-print-fix-' + $env:GITHUB_SHA.Substring(0,8)
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip --clobber
+          } else {
+            gh release create $tag $zip --target $env:GITHUB_SHA --title 'PdfCraft Windows print-fix diagnostic preview' --notes-file docs/windows-print-fix.md --prerelease
+          }
+          if ($LASTEXITCODE) { throw 'Preview release upload failed' }
+          Write-Output "::notice title=Print-fix preview ZIP::https://github.com/pyein67/pdfcraft/releases/download/$tag/$(Split-Path $zip -Leaf)"
