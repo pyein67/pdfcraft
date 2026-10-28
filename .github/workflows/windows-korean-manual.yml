@@ -1,0 +1,150 @@
+name: Windows x64 Korean build (manual)
+run-name: Windows x64 Korean build — ${{ inputs.source_sha }}
+
+# This dispatcher must be merged into the default branch to show "Run workflow".
+# The workflow branch and compiled source are deliberately selected separately.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full commit SHA to build (default is the Type 3 print candidate)
+        required: true
+        type: string
+        default: '39a764704d58b03d8987e03ca95f2b9a4c77a075'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-korean-manual-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Check out the exact application source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Verify source identity
+        id: source
+        shell: pwsh
+        env:
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:REQUESTED_SHA -notmatch '^[0-9a-fA-F]{40}$') {
+            throw 'source_sha must be a full 40-character commit SHA, not a branch name.'
+          }
+          $sha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -or $sha -ine $env:REQUESTED_SHA) { throw 'Checked-out source does not match the requested commit.' }
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          "short=$($sha.Substring(0,8))" >> $env:GITHUB_OUTPUT
+          "Application source: $sha" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Install the pinned Windows build toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: windows-korean-manual-rust-1.95
+          cache-all-crates: true
+          cache-on-failure: true
+
+      - name: Validate Windows packaging scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem packaging/windows/*.ps1 | ForEach-Object {
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          }
+
+      - name: Build and test with the existing Korean fonts and Windows icons
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            ./packaging/windows/build-korean.ps1 *>&1 | Tee-Object -FilePath korean-build.log
+            if ($LASTEXITCODE) { throw 'Korean build/test script failed.' }
+          } catch {
+            $_ | Out-String | Add-Content korean-build.log
+            Get-Content korean-build.log -Tail 120 | Out-String | Add-Content $env:GITHUB_STEP_SUMMARY
+            throw
+          }
+
+      - name: Probe native vector and isolated image printing
+        id: probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./packaging/windows/Test-PrintToPdfRegression.ps1 -Cli (Join-Path $env:GITHUB_WORKSPACE 'target/x86_64-pc-windows-msvc/release/pdfcraft-cli.exe') -ReportDirectory (Join-Path $env:RUNNER_TEMP 'print-probe') *>&1 | Tee-Object -FilePath print-probe.log
+          if ($LASTEXITCODE) { throw 'Native PDF print probe failed.' }
+
+      - name: Package the exact-source diagnostic preview
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHORT: ${{ steps.source.outputs.short }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:GITHUB_WORKSPACE 'target/x86_64-pc-windows-msvc/release'
+          $stage = Join-Path $env:RUNNER_TEMP 'pdfcraft-package'
+          New-Item -ItemType Directory $stage | Out-Null
+          $files = @('pdfcraft.exe','pdfcraft-cli.exe','NanumGothic-OFL.txt','KOREAN-ATTRIBUTION.txt','ATTRIBUTION.md','Register-PdfCraft.ps1','WINDOWS-ICON-README.md','Collect-PrintDiagnostics.ps1','WINDOWS-PRINT-FIX.md','NOTICE','LICENSE-MIT','LICENSE-APACHE','craft-fonts-licences')
+          foreach ($file in $files) {
+            $source = Join-Path $root $file
+            if (!(Test-Path $source)) { throw "Required package file is missing: $file" }
+            Copy-Item $source $stage -Recurse
+          }
+          Copy-Item docs/type3-print-safety.md (Join-Path $stage 'TYPE3-PRINT-SAFETY.md')
+          $report = Join-Path $env:RUNNER_TEMP 'print-probe/print-to-pdf-result.json'
+          if (Test-Path $report) {
+            Copy-Item $report (Join-Path $stage 'NATIVE-PRINT-PROBE.json')
+          } else {
+            @{ Status = 'NOT_RUN'; StepOutcome = $env:PROBE_OUTCOME; Reason = 'No probe report was produced; inspect the workflow logs.' } | ConvertTo-Json | Set-Content (Join-Path $stage 'NATIVE-PRINT-PROBE.json') -Encoding utf8
+          }
+          @{ SourceCommit = $env:SOURCE_SHA; WorkflowCommit = $env:WORKFLOW_SHA; Target = 'x86_64-pc-windows-msvc'; Toolchain = '1.95.0'; NativeProbeStep = $env:PROBE_OUTCOME; PhysicalPrinterTest = 'NOT_RUN'; Signed = $false } | ConvertTo-Json | Set-Content (Join-Path $stage 'BUILD-INFO.json') -Encoding utf8
+          @('Extract the entire ZIP before running pdfcraft.exe.','This unsigned diagnostic preview preserves the Korean UI, fonts and Windows icons.','See TYPE3-PRINT-SAFETY.md and NATIVE-PRINT-PROBE.json for test coverage and limits.','Logs: %APPDATA%\PdfCraft\data\logs\pdfcraft.log; portable mode: PdfCraftData\logs\ beside the EXE.','Keep pdfcraft.log and rotated logs before relaunching repeatedly.','Collect-PrintDiagnostics.ps1 collects read-only Windows/printer diagnostics.','A failed probe keeps the workflow failed even when this diagnostic ZIP is retained.','Actual company-printer output and barcode scanning are unverified.') | Set-Content (Join-Path $stage 'READ-ME-FIRST.txt') -Encoding utf8
+          $dist = Join-Path $env:RUNNER_TEMP 'pdfcraft-dist'
+          New-Item -ItemType Directory $dist | Out-Null
+          $zip = Join-Path $dist "pdfcraft-windows-x64-$($env:SOURCE_SHORT)-unsigned.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $zip -Leaf)" | Set-Content (Join-Path $dist 'SHA256SUMS.txt') -Encoding ascii
+          "ZIP SHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
+          "Native probe step: $($env:PROBE_OUTCOME). Physical printer test: NOT RUN." >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload Windows x64 portable ZIP and checksum
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pdfcraft-windows-x64-${{ steps.source.outputs.short }}-unsigned
+          path: ${{ runner.temp }}/pdfcraft-dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Keep build and print diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows-korean-build-diagnostics-${{ github.run_id }}
+          # Do not upload user PDFs or unaudited native-driver PDF output.
+          path: |
+            korean-build.log
+            print-probe.log
+            ${{ runner.temp }}/print-probe/*.json
+            ${{ runner.temp }}/print-probe/*.txt
+          if-no-files-found: ignore
+          retention-days: 30
