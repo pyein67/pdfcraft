@@ -3158,6 +3158,29 @@ fn printing_through_tools() {
 }
 
 #[test]
+fn image_print_through_tools_is_opt_in_for_saved_pdfs_and_confined() {
+    let dir = workdir("image-print");
+    let mut a = auto(&dir);
+    let id = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    ok(&mut a, "doc_print", json!({"doc":id,"pages":"1","path":"vector.pdf"}));
+    let vector = std::sync::Arc::new(std::fs::read(dir.join("vector.pdf")).unwrap());
+    let doc = pdfcraft_cos::Document::open(vector).unwrap();
+    assert!(doc.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.name(b"Type") == Some(b"Font"))));
+    let result = ok(&mut a, "doc_print", json!({"doc":id,"pages":"1","path":"image.pdf","print_as_image":true}));
+    assert_eq!(result["print_as_image"], true);
+    let image = std::sync::Arc::new(std::fs::read(dir.join("image.pdf")).unwrap());
+    let doc = pdfcraft_cos::Document::open(image).unwrap();
+    assert_eq!(pdfcraft_model::pages(&doc).len(), 1);
+    assert!(!doc.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.name(b"Type") == Some(b"Font"))));
+    assert!(doc.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.name(b"Subtype") == Some(b"Image"))));
+    assert!(a.call("doc_print", &json!({"doc":id,"path":"../escape-image.pdf","print_as_image":true})).is_err());
+    assert!(a.call("doc_print", &json!({"doc":id,"path":"invalid.pdf","print_as_image":"yes"})).is_err());
+    assert!(!dir.join("invalid.pdf").exists());
+    // The original remains searchable; flattening is only a print output operation.
+    assert!(ok(&mut a, "text_find", json!({"doc":id,"query":"Page"}))["count"].as_u64().unwrap() > 0);
+}
+
+#[test]
 fn adding_content_through_tools() {
     let dir = workdir("content");
     let mut png = Vec::new();

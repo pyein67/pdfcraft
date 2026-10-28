@@ -34,3 +34,6 @@ winresource = "0.1"
 default = ["mcp"]
 # The opt-in MCP server (`pdfcraft-cli mcp`). Build with --no-default-features to leave it out.
 mcp = ["pdfcraft-automation/mcp"]
+
+[dev-dependencies]
+tempfile = "3"

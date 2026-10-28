@@ -506,6 +506,7 @@ pub fn tools() -> Vec<ToolDef> {
                 "collate": { "type": "boolean" },
                 "duplex": { "type": "string", "enum": ["off", "long-edge", "short-edge"] },
                 "grayscale": { "type": "boolean" },
+                "print_as_image": { "type": "boolean", "description": "Flatten final sheets losslessly at 600 dpi before printing or saving. Windows automatically uses isolated image printing for Type 3 resource jobs. Normal jobs retain their native vector path." },
                 "options": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Printer driver options from printer_options: key → choice value." },
             }),
             &["doc"],

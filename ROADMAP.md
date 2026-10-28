@@ -1,6 +1,6 @@
 # PdfCraft roadmap
 
-> **Last reviewed:** 2026-10-19 · **Last updated:** 2026-10-19 · **Change:** minor (M10 Windows print regression investigation; Samsung output and native fault cause unverified; estimates unchanged)
+> **Last reviewed:** 2026-10-28 · **Last updated:** 2026-10-28 · **Change:** minor (M10 conditional 600 dpi image printing and isolated Windows worker candidate; native fault cause/hardware acceptance unverified; estimates unchanged)
 
 > **Last reviewed:** 2026-10-16 · **Last updated:** 2026-10-16 · **Change:** minor (M14 Korean UI; Windows 10 interactive acceptance pending; estimates unchanged)
 
@@ -153,6 +153,8 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 | 8 | 1.0 polish: performance, right-to-left, missing languages, keyboard-only (M14) | 55–95 |
 
 ## Progress log
+
+- **2026-10-28 (M10, conditional image printing):** Added bounded lossless 600 dpi raster output and a same-executable Windows worker for Type 3 resource/explicit image jobs; ordinary vector submission and Korean/icon history retained. See `docs/type3-print-safety.md`. Native Windows/hardware acceptance pending; Type 3 is a routing heuristic, not an established crash cause. Estimates unchanged.
 
 - **2026-10-19 (M10, Windows print regression):** Compared user-reported working `76dd98ef` with icon build `a49b1991`; bisect identifies `47b99dfe` as the production-change candidate, without a fabricated hardware verdict. Retained the original spooler and red icon; inspection of the original EXE ruled out the zero-plane ICO hypothesis. Fixed pending printer selection and added stage logs/diagnostics. See `docs/windows-print-fix.md`; native crash cause and Samsung output remain unverified. Estimates unchanged.
 - **2026-10-16 (M14, Windows PDF icon):** Contributor-supplied GPT-generated ICO wired to both Windows EXE icon groups, window/taskbar and installer shortcuts; originals retained. Optional ZIP registration preserves existing PDF defaults and exports previous registration. Native PE/registry/GUI probes added; Windows 10 Explorer acceptance remains manual. See `docs/windows-korean-icon.md`. Estimates unchanged.

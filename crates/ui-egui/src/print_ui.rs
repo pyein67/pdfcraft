@@ -46,6 +46,8 @@ pub struct PrintDraft {
     pub copies: u32,
     pub collate: bool,
     pub grayscale: bool,
+    /// Explicit compatibility route; Windows also selects it for Type 3 resource jobs.
+    pub print_as_image: bool,
     pub duplex: spool::Duplex,
     pub which: Which,
     pub range: String,
@@ -91,6 +93,7 @@ impl Default for PrintDraft {
             copies: 1,
             collate: true,
             grayscale: false,
+            print_as_image: false,
             duplex: spool::Duplex::Off,
             which: Which::All,
             range: String::new(),
@@ -388,6 +391,7 @@ impl PdfCraftApp {
     /// and the spooler's answer arrives as a notice.
     #[cfg(not(target_arch = "wasm32"))]
     fn send_to_printer(&mut self, printer: String, bytes: Vec<u8>, job: spool::Job) -> bool {
+        let force_image = self.print_draft.print_as_image;
         let (tx, rx) = std::sync::mpsc::channel();
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
@@ -402,7 +406,7 @@ impl PdfCraftApp {
                 job.grayscale,
                 job.scaling
             );
-            let result = spool::submit(&bytes, &job).map_err(|e| e.to_string());
+            let result = pdfcraft_engine::print_safety::submit(bytes, &job, force_image);
             match &result {
                 Ok(message) => log::info!("print.submit.end: {message}"),
                 Err(error) => log::error!("print.submit.error: {error}"),
@@ -729,6 +733,14 @@ pub(crate) fn body(
                     d.driver_error = None;
                 }
                 ui.end_row();
+                #[cfg(windows)]
+                {
+                    ui.label("");
+                    ui.add_enabled_ui(d.printer.is_some(), |ui| {
+                        ui.checkbox(&mut d.print_as_image, tl!("Print as image (600 dpi)"));
+                    });
+                    ui.end_row();
+                }
                 ui.label(tl!("Copies:"));
                 ui.add_enabled_ui(!browser, |ui| {
                     ui.horizontal(|ui| {

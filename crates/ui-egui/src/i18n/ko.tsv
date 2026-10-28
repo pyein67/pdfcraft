@@ -1,6 +1,7 @@
 # Korean (ko) interface catalog: context<TAB>English source<TAB>Korean translation.
 # Contributor-original clean-room translations from the meaning of the English labels.
 # MIT OR Apache-2.0. Escapes: \n, \t, \\. Korean uses one plural form.
+	Print as image (600 dpi)	이미지로 인쇄 (600 dpi)
 
 	Menu	메뉴
 	File	파일

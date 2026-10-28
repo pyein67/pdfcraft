@@ -13,6 +13,9 @@ if (!$driver) {
   }
 }
 $cases = @(@('english',1,'English printing test'), @('korean',1,'한글 인쇄 시험 ABC 123'), @('multipage',3,'한글 여러 페이지 English 123'))
+# The original comparison binaries predate print_as_image. Preserve their probes exactly;
+# only the current candidate exercises the isolated image path on a real virtual queue.
+if ($Label -eq 'current') { $cases += ,@('image',1,'한글 이미지 인쇄 English 123') }
 $results = @()
 foreach ($case in $cases) {
   $name = 'PdfCraft PDF regression ' + [guid]::NewGuid().ToString()
@@ -24,7 +27,9 @@ foreach ($case in $cases) {
     for ($page = 1; $page -le $case[1]; $page++) {
       $steps += @{ tool = 'page_add_text'; args = @{ doc = 1; page = $page; text = $case[2]; rect = @(40,40,500,100); size = 14 } }
     }
-    $steps += @{ tool = 'doc_print'; args = @{ doc = 1; printer = $name; paper = 'Letter'; layout = 'actual' } }
+    $printArgs = @{ doc = 1; printer = $name; paper = 'Letter'; layout = 'actual' }
+    if ($case[0] -eq 'image') { $printArgs.print_as_image = $true }
+    $steps += @{ tool = 'doc_print'; args = $printArgs }
     $script = Join-Path $ReportDirectory ($case[0] + '.json')
     ConvertTo-Json -InputObject $steps -Depth 8 | Set-Content -LiteralPath $script -Encoding utf8
     # Bound the native process so a blocked print driver cannot hang the build indefinitely.
@@ -77,4 +82,4 @@ foreach ($case in $cases) {
 $results | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $ReportDirectory 'print-to-pdf-result.json') -Encoding utf8
 $failed = @($results | Where-Object Status -eq 'FAILED')
 if ($failed.Count) { throw ($failed | ConvertTo-Json -Depth 5) }
-Write-Output 'PASS: actual Microsoft Print to PDF output reopened for English, Korean and three-page cases. No physical printer was tested.'
+Write-Output "PASS: actual Microsoft Print to PDF output reopened for all $($cases.Count) $Label cases. No physical printer was tested."

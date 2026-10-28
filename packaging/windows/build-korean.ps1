@@ -32,6 +32,9 @@ try {
   if (!$SkipTests) {
     Write-Output '::notice title=Korean build phase::Run core PDF and font tests'
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-fonts -p pdfcraft-annot -p pdfcraft-edit -p pdfcraft-render }
+    Write-Output '::notice title=Korean build phase::Run image-print routing, raster and worker regression tests'
+    Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-engine print_safety }
+    Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-cli --test image_print }
     Write-Output '::notice title=Korean build phase::Run automation tests'
     Invoke-Checked { cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-automation --test automation }
     Write-Output '::notice title=Korean build phase::Run Korean localization, font, language-switch and Text box tests'

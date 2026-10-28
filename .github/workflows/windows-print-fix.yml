@@ -3,7 +3,7 @@ name: Windows x64 print-fix build
 on:
   workflow_dispatch:
   push:
-    branches: [fix/windows-print-crash]
+    branches: [fix/windows-print-crash, fix/pdf-type3-print-crash]
   pull_request:
     paths:
       - 'crates/print/**'

@@ -422,3 +422,22 @@ fn cancelling_print_does_not_submit_or_change_the_document() {
     assert_eq!(h.state().dialog, None);
     assert_eq!(h.state().session.get(id).unwrap().dirty, before);
 }
+
+#[cfg(windows)]
+#[test]
+fn image_print_choice_survives_reopening_the_windows_dialog() {
+    let mut h = harness();
+    h.state_mut().printer_source =
+        Some(std::sync::Arc::new(|| vec![pdfcraft_engine::print::spool::Printer { name: "Test Queue".into(), default: true, two_sided: None }]));
+    h.state_mut().print_draft.printer = Some("Test Queue".into());
+    h.state_mut().print_draft.printer_picked = true;
+    h.state_mut().open_print();
+    h.run_steps(3);
+    h.get_by_label("Print as image (600 dpi)").click();
+    h.run_steps(2);
+    assert!(h.state().print_draft.print_as_image);
+    h.state_mut().dialog = None;
+    h.state_mut().open_print();
+    h.run_steps(2);
+    assert!(h.state().print_draft.print_as_image);
+}
