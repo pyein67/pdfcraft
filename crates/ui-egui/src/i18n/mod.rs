@@ -147,8 +147,9 @@ fn plural_sl(n: u64) -> usize {
 }
 
 /// The registry. English first: it is the fallback and the source language.
-pub static LANGUAGES: [LangInfo; 22] = [
+pub static LANGUAGES: [LangInfo; 23] = [
     LangInfo { code: "en", name: "English", source: "", plural: plural_one_other, rtl: false, catalog: OnceLock::new() },
+    LangInfo { code: "ko", name: "한국어", source: include_str!("ko.tsv"), plural: plural_none, rtl: false, catalog: OnceLock::new() },
     LangInfo { code: "ja", name: "日本語", source: include_str!("ja.tsv"), plural: plural_none, rtl: false, catalog: OnceLock::new() },
     // Simplified Chinese; `zh`, `zh-CN`, `zh-SG` and `zh-Hans-*` locales resolve here (see `candidates`).
     LangInfo {
@@ -3039,6 +3040,90 @@ mod tests {
                 let missing: std::collections::BTreeSet<char> = labels.chars().filter(|c| !fonts.has_glyphs(&id, &c.to_string())).collect();
                 assert!(missing.is_empty(), "{build}: {id:?} lacks Arabic label glyphs {missing:?}");
             }
+        }
+    }
+
+    #[test]
+    fn korean_locale_preferences_and_fallback() {
+        let ko = Lang::from_code("ko").expect("Korean registered");
+        assert_eq!(ko.name(), "한국어");
+        for tag in ["ko", "ko-KR", "ko_KR.UTF-8", "KO-kr", "ko-KP"] {
+            assert_eq!(lang_from_tag(tag), Some(ko), "{tag}");
+        }
+        assert_eq!(first_supported("ko-KR\nen-US"), Some(ko));
+        assert_eq!(normalize_pref("KO"), Some("ko"));
+        assert_eq!(Lang::from_pref("en"), Lang::EN, "explicit English overrides system detection");
+        let mut app = crate::PdfCraftApp::default();
+        app.set_option("language", "KO").unwrap();
+        let mut restored = crate::PdfCraftApp::default();
+        restored.restore(&app.persist());
+        assert_eq!(restored.language, "ko");
+        assert_eq!(Lang::from_pref(&restored.language), ko);
+        assert!(restored.set_option("language", "not-a-language").is_err());
+        assert_eq!(restored.language, "ko");
+        assert_eq!(tr(ko, "File"), "파일");
+        assert_eq!(tr(ko, "Untranslated future message"), "Untranslated future message");
+        assert_eq!(
+            fmt(tr(ko, "Couldn't open {name}: {e}"), &[("name", "문서{e}.pdf"), ("e", "OS error {name}")]),
+            "문서{e}.pdf을(를) 열 수 없습니다: OS error {name}"
+        );
+        for n in [0, 1, 2, 11, u64::MAX] {
+            assert_eq!(trn(ko, n, "{n} page", "{n} pages"), format!("{n}페이지"));
+        }
+    }
+
+    #[test]
+    fn korean_covers_commands_literals_and_dynamic_catalog_keys() {
+        let ko = Lang::from_code("ko").expect("Korean registered");
+        let mut labels = scan_ui_literals(true);
+        assert!(labels.len() > 900);
+        for command in pdfcraft_engine::commands::COMMANDS {
+            labels.insert(command.label.to_owned());
+            if let Some(menu) = command.menu {
+                labels.insert(menu.to_owned());
+            }
+        }
+        for group in pdfcraft_engine::catalog::TOOL_GROUPS {
+            labels.insert(group.label.to_owned());
+            for section in group.sections {
+                labels.insert(section.title.to_owned());
+                for item in section.items {
+                    labels.insert(item.label.to_owned());
+                }
+            }
+        }
+        let missing: Vec<_> = labels.iter().filter(|label| !has(ko, label)).collect();
+        assert!(missing.is_empty(), "Korean UI labels missing: {missing:#?}");
+        for reference in LANGUAGES.iter().filter(|l| l.code != "ko") {
+            let (entries, errors) = parse_entries(reference.source, reference.plural_forms());
+            assert!(errors.is_empty(), "{}: {errors:?}", reference.code);
+            for e in entries {
+                let found = match e.context.as_str() {
+                    "" => ko.catalog().plain(&e.source),
+                    "@id" => ko.catalog().id(&e.source),
+                    "@plural" => e.source.split_once('|').and_then(|(one, other)| ko.catalog().plural(one, other, 0)),
+                    context => ko.catalog().contextual(context, &e.source),
+                };
+                assert!(found.is_some(), "Korean dynamic label missing: {} / {}", e.context, e.source);
+            }
+        }
+    }
+
+    #[test]
+    fn korean_catalog_has_glyphs_in_every_ui_family() {
+        if pdfcraft_fonts::korean::ui_fonts().is_empty() {
+            assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none(), "Korean font required");
+            return;
+        }
+        let ko = Lang::from_code("ko").expect("Korean registered");
+        let (entries, errors) = parse_entries(ko.0.source, 1);
+        assert!(errors.is_empty(), "{errors:?}");
+        let chars: std::collections::BTreeSet<_> =
+            entries.iter().flat_map(|e| e.translation.chars()).chain(ko.name().chars()).filter(|c| !c.is_control()).collect();
+        let mut fonts = egui::epaint::text::Fonts::new(egui::epaint::text::TextOptions::default(), crate::theme::font_definitions());
+        for id in [egui::FontId::proportional(13.0), egui::FontId::monospace(13.0), crate::theme::medium(13.0), crate::theme::semibold(17.0)] {
+            let missing: Vec<_> = chars.iter().filter(|c| !fonts.has_glyphs(&id, &c.to_string())).collect();
+            assert!(missing.is_empty(), "{id:?}: missing glyphs {missing:?}");
         }
     }
 

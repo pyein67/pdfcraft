@@ -48,10 +48,12 @@ mod windows_manifest;
 const APP_ID: &str = "ai.storyteller.pdfcraft";
 
 /// The app icon (assets/app-icon/README.md). macOS gets the version on Apple's icon grid, with a
-/// transparent margin; Windows and Linux get the full-bleed tile.
+/// transparent margin; Linux keeps the full-bleed tile. Windows uses the supplied PDF design.
 #[cfg(target_os = "macos")]
 const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/app-icon/pdfcraft-1024.png");
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/app-icon/korean/pdfcraft-pdf-icon-256.png");
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const APP_ICON_PNG: &[u8] = include_bytes!("../../../assets/app-icon/hicolor/256x256/apps/ai.storyteller.pdfcraft.png");
 
 /// The app was called PrintCraft before; settings saved then are under this key.
@@ -157,6 +159,9 @@ fn rejoin_split_paths(args: Vec<String>, exists: impl Fn(&str) -> bool) -> Vec<S
 }
 
 fn main() -> eframe::Result {
+    if let Some(code) = pdfcraft_engine::print_safety::worker_entry() {
+        std::process::exit(if code == std::process::ExitCode::SUCCESS { 0 } else { 1 });
+    }
     // First, so the panic hook and every start-up warning are recorded (`logging`).
     let logger = logging::install();
     // Last-resort guard (AGENTS.md §4): commands, edits, opens and saves catch panics and report

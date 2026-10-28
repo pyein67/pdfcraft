@@ -51,7 +51,13 @@ In a browser there is no spooler: the app (`pdfcraft-ui-egui`'s `web_print`) dra
 PDF's sheets with PdfCraft's renderer and prints them through the browser's print dialog, which
 sets copies, two-sided printing and colour. This crate stays free of web APIs.
 
-Not yet: print as image, poster labels, PostScript output, colour conversion for
+The engine's `print_safety` adapter can flatten imposed sheets to lossless 600 dpi RGB
+tiles. Windows jobs with Type 3 page-resource fonts take this compatibility route in an
+opt-in same-executable worker; ordinary jobs retain this crate's original vector path.
+The Windows dialog offers an explicit image-print checkbox; `doc_print` also accepts
+`print_as_image: true` (including PDF output). See `docs/type3-print-safety.md` for limits.
+
+Not yet: poster labels, PostScript output, colour conversion for
 grayscale.
 
 ## Architectural sheets and scale
