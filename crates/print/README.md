@@ -52,8 +52,10 @@ PDF's sheets with PdfCraft's renderer and prints them through the browser's prin
 sets copies, two-sided printing and colour. This crate stays free of web APIs.
 
 The engine's `print_safety` adapter can flatten imposed sheets to lossless 600 dpi RGB
-tiles. Windows jobs with Type 3 page-resource fonts take this compatibility route in an
-opt-in same-executable worker; ordinary jobs retain this crate's original vector path.
+tiles. Windows jobs with Type 3 page-resource fonts run in an opt-in same-executable
+worker: restricted uncoloured outline fonts first become embedded Type 1C, with
+600 dpi full-sheet images as the conservative fallback. Ordinary jobs retain this
+crate's original vector path. See `docs/pdf-print-quality.md` for the scale/DPI audit.
 The Windows dialog offers an explicit image-print checkbox; `doc_print` also accepts
 `print_as_image: true` (including PDF output). See `docs/type3-print-safety.md` for limits.
 

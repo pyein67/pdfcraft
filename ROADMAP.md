@@ -1,6 +1,6 @@
 # PdfCraft roadmap
 
-> **Last reviewed:** 2026-10-28 · **Last updated:** 2026-10-28 · **Change:** minor (M10 conditional 600 dpi image printing and isolated Windows worker candidate; native fault cause/hardware acceptance unverified; estimates unchanged)
+> **Last reviewed:** 2026-10-29 · **Last updated:** 2026-10-29 · **Change:** minor (M10 restricted vector compatibility quality candidate with isolated image fallback; Windows hardware acceptance pending; estimates unchanged)
 
 > **Last reviewed:** 2026-10-16 · **Last updated:** 2026-10-16 · **Change:** minor (M14 Korean UI; Windows 10 interactive acceptance pending; estimates unchanged)
 
@@ -462,3 +462,5 @@ Newest first: the date, what moved, and the new overall estimate.
 | 2026-10-05 | major | Honest assessment and "Where we're lacking" added |
 
 - **2026-10-12 (M8):** Redaction cleans indirect and form structure references, preserving surviving form tags.
+
+- 2026-10-29 — M10: restricted Type 3 outline-to-Type 1C compatibility printing candidate; preserve sheet geometry and other vector content, retain isolated 600 dpi fallback. Scale/DPI audit in docs/pdf-print-quality.md; Windows quality acceptance pending.

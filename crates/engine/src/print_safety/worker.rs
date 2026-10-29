@@ -16,6 +16,7 @@ const TIMEOUT: Duration = Duration::from_secs(15 * 60);
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Ticket {
+    force_image: bool,
     printer: Option<String>,
     copies: u32,
     collate: bool,
@@ -29,6 +30,7 @@ struct Ticket {
 impl From<&Job> for Ticket {
     fn from(job: &Job) -> Self {
         Self {
+            force_image: false,
             printer: job.printer.clone(),
             copies: job.copies,
             collate: job.collate,
@@ -124,14 +126,16 @@ fn wait(child: Child, timeout: Duration) -> Result<(), String> {
 }
 
 #[cfg_attr(not(windows), expect(dead_code, reason = "Windows worker launcher is also type-checked in host unit tests"))]
-pub(super) fn submit(pdf: &[u8], job: &Job) -> Result<String, String> {
+pub(super) fn submit(pdf: &[u8], job: &Job, force_image: bool) -> Result<String, String> {
     if pdf.len() > super::MAX_BYTES {
         return Err("Image-print input exceeds its byte limit".into());
     }
     // Keep these inputs alive until the child exits, then remove the complete private directory.
     let dir = tempfile::Builder::new().prefix("pdfcraft-image-print-").tempdir().map_err(|e| e.to_string())?;
     write_new(&dir.path().join("input.pdf"), pdf)?;
-    write_new(&dir.path().join("ticket.json"), &serde_json::to_vec(&Ticket::from(job)).map_err(|e| e.to_string())?)?;
+    let mut ticket = Ticket::from(job);
+    ticket.force_image = force_image;
+    write_new(&dir.path().join("ticket.json"), &serde_json::to_vec(&ticket).map_err(|e| e.to_string())?)?;
     let mut command = Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
     command.arg(FLAG).arg(dir.path()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
@@ -142,7 +146,7 @@ pub(super) fn submit(pdf: &[u8], job: &Job) -> Result<String, String> {
     wait(command.spawn().map_err(|e| format!("Cannot start image-print worker: {e}"))?, TIMEOUT)?;
     let result: Result<String, String> = serde_json::from_slice(&read_limited(&dir.path().join("result.json"), 64 * 1024)?)
         .map_err(|e| format!("Invalid image-print worker response: {e}"))?;
-    result.map(|msg| if msg.is_empty() { "600 dpi image print submitted".into() } else { format!("600 dpi image print: {msg}") })
+    result.map(|msg| format!("isolated compatibility print: {msg}"))
 }
 
 pub(super) fn entry() -> Option<ExitCode> {
@@ -157,9 +161,10 @@ pub(super) fn entry() -> Option<ExitCode> {
     let directory = Path::new(&directory);
     let result = crate::guard(|| {
         let ticket: Ticket = serde_json::from_slice(&read_limited(&directory.join("ticket.json"), 64 * 1024)?).map_err(|e| e.to_string())?;
+        let force_image = ticket.force_image;
         let job = ticket.job()?;
-        let pdf = super::image_pdf(std::sync::Arc::new(read_limited(&directory.join("input.pdf"), super::MAX_BYTES)?))?;
-        crate::print::spool::submit(&pdf, &job).map_err(|e| e.to_string())
+        let (pdf, route) = super::compatibility_pdf(std::sync::Arc::new(read_limited(&directory.join("input.pdf"), super::MAX_BYTES)?), force_image)?;
+        crate::print::spool::submit(&pdf, &job).map(|message| format!("{route}; {message}")).map_err(|e| format!("{route}; {e}"))
     })
     .unwrap_or_else(Err);
     let saved = serde_json::to_vec(&result).map_err(|e| e.to_string()).and_then(|bytes| write_new(&directory.join("result.json"), &bytes));

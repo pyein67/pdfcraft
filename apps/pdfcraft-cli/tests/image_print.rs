@@ -5,8 +5,11 @@ use std::sync::Arc;
 use serde_json::json;
 
 fn synthetic_type3() -> Vec<u8> {
+    synthetic_type3_glyph("1 0 d0 0 0 1 1 re f")
+}
+
+fn synthetic_type3_glyph(glyph: &str) -> Vec<u8> {
     let content = "BT /F1 20 Tf 10 10 Td (A) Tj ET";
-    let glyph = "1 0 d0 0 0 1 1 re f";
     let objects = [
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
@@ -75,4 +78,53 @@ fn windows_isolated_image_submission_returns_an_error_instead_of_closing_the_par
         .unwrap();
     assert_eq!(result.status.code(), Some(1), "{}", String::from_utf8_lossy(&result.stderr));
     assert!(String::from_utf8_lossy(&result.stderr).contains("not available"), "{}", String::from_utf8_lossy(&result.stderr));
+}
+
+#[test]
+fn cli_compatibility_export_keeps_outlines_at_actual_size_and_stays_confined() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = synthetic_type3_glyph("1 0 0 0 1 1 d1 0 0 m 1 0 l 1 1 l 0 1 l h f");
+    std::fs::write(dir.path().join("source.pdf"), &original).unwrap();
+    let script = json!([
+        {"tool":"doc_open","args":{"path":"source.pdf"}},
+        {"tool":"doc_print","args":{"doc":1,"path":"safe.pdf","layout":"actual","paper":"A4","print_compatibility":true}},
+        {"tool":"doc_print","args":{"doc":1,"path":"normal.pdf","layout":"actual","paper":"A4"}}
+    ]);
+    std::fs::write(dir.path().join("steps.json"), script.to_string()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_pdfcraft-cli"))
+        .args(["run", "--script"])
+        .arg(dir.path().join("steps.json"))
+        .arg("--root")
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Type 1C"));
+    let safe = Arc::new(std::fs::read(dir.path().join("safe.pdf")).unwrap());
+    let normal = Arc::new(std::fs::read(dir.path().join("normal.pdf")).unwrap());
+    assert!(!pdfcraft_engine::print_safety::has_type3(safe.clone()).unwrap());
+    assert!(pdfcraft_engine::print_safety::has_type3(normal.clone()).unwrap());
+    let a = pdfcraft_cos::Document::open(safe).unwrap();
+    let b = pdfcraft_cos::Document::open(normal).unwrap();
+    let boxes = |d: &pdfcraft_cos::Document| {
+        d.scan_objects()
+            .filter_map(|(_, o)| o.as_dict().filter(|d| d.name(b"Type") == Some(b"Page")).and_then(|d| d.get(b"MediaBox")).cloned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(boxes(&a), boxes(&b));
+    let script = json!([
+        {"tool":"doc_open","args":{"path":"source.pdf"}},
+        {"tool":"doc_print","args":{"doc":1,"path":"../escape-quality.pdf","print_compatibility":true}}
+    ]);
+    std::fs::write(dir.path().join("escape.json"), script.to_string()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_pdfcraft-cli"))
+        .args(["run", "--script"])
+        .arg(dir.path().join("escape.json"))
+        .arg("--root")
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!dir.path().parent().unwrap().join("escape-quality.pdf").exists());
+    assert_eq!(std::fs::read(dir.path().join("source.pdf")).unwrap(), original);
 }

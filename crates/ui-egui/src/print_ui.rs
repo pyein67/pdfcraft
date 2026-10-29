@@ -361,7 +361,14 @@ impl PdfCraftApp {
             }
         };
         let name = doc.name.clone();
-        log::info!("print.prepare: {} selected pages, paper {:?}, orientation {:?}", settings.pages.len(), settings.paper, settings.orientation);
+        log::info!(
+            "print.prepare: {} selected pages, paper {:?} pt, orientation {:?}, layout {:?}, force_image {}",
+            settings.pages.len(),
+            settings.paper,
+            settings.orientation,
+            settings.layout,
+            self.print_draft.print_as_image
+        );
         let bytes = match self.session.print_pdf(id, &settings) {
             Ok(b) => b,
             Err(e) => {

@@ -7,6 +7,28 @@ use std::sync::Arc;
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, SaveOptions, Stream};
 use pdfcraft_render::{PRINT_TAG, PageRenderer, RenderConfig, RenderRequest, Tile};
 
+mod outlines;
+
+/// Prepare only compatibility jobs; ordinary printing does not call this adapter.
+/// Force-image remains available if a printer cannot consume the restricted outline result.
+pub fn compatibility_pdf(pdf: Arc<Vec<u8>>, force_image: bool) -> Result<(Vec<u8>, String), String> {
+    crate::guard(|| {
+        if pdf.len() > MAX_BYTES {
+            return Err("Compatibility input byte limit".into());
+        }
+        if !force_image && !has_type3(pdf.clone())? {
+            return Ok(((*pdf).clone(), "original vector".into()));
+        }
+        if !force_image {
+            match outlines::convert(pdf.clone()) {
+                Ok(bytes) => return Ok((bytes, "Type 3 outlines to embedded Type 1C; original sheet geometry and other content retained".into())),
+                Err(reason) => return image_pdf(pdf).map(|bytes| (bytes, format!("600 dpi image fallback: {reason}"))),
+            }
+        }
+        image_pdf(pdf).map(|bytes| (bytes, "600 dpi image (explicit)".into()))
+    })?
+}
+
 pub const IMAGE_DPI: u32 = 600;
 const MAX_BYTES: usize = 256 * 1024 * 1024;
 const MAX_JOB_PIXELS: u64 = 500_000_000;
@@ -205,7 +227,7 @@ pub fn submit(pdf: Vec<u8>, job: &crate::print::spool::Job, force_image: bool) -
     {
         let pdf = Arc::new(pdf);
         if force_image || has_type3(pdf.clone())? {
-            return worker::submit(&pdf, job);
+            return worker::submit(&pdf, job, force_image);
         }
         crate::print::spool::submit(&pdf, job).map_err(|e| e.to_string())
     }

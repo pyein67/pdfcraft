@@ -129,12 +129,20 @@ impl Automation {
         let sizes: Vec<(f64, f64)> = self.doc(a)?.info.pages.iter().map(|p| (p.width as f64, p.height as f64)).collect();
         let sheets = print::layout(&sizes, &settings).map_err(|e| bad(e.to_string()))?.len();
         let force_image = a.opt_bool("print_as_image")?.unwrap_or(false);
+        let compatibility = a.opt_bool("print_compatibility")?.unwrap_or(false);
         let bytes = self.session.print_pdf(id, &settings).map_err(failed)?;
         let mut out = json!({ "sheets": sheets, "pages": settings.pages.len(), "bytes": bytes.len() });
         match (a.opt_str("path")?, a.opt_str("printer")?) {
             (Some(p), None) => {
                 let path = self.resolve(p, true)?;
                 let bytes = if force_image { pdfcraft_engine::print_safety::image_pdf(std::sync::Arc::new(bytes)).map_err(failed)? } else { bytes };
+                let bytes = if compatibility && !force_image {
+                    let (bytes, route) = pdfcraft_engine::print_safety::compatibility_pdf(std::sync::Arc::new(bytes), false).map_err(failed)?;
+                    out["compatibility_route"] = json!(route);
+                    bytes
+                } else {
+                    bytes
+                };
                 write_atomic(&path, &bytes)?;
                 out["bytes"] = json!(bytes.len());
                 out["print_as_image"] = json!(force_image);

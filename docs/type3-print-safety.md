@@ -17,7 +17,10 @@ The existing path is permission checking → imposition of current document/anno
 These native calls occur inside the caller; Rust Result/catch_unwind cannot contain an
 access violation. The pinned backend and dependency versions have not been changed.
 
-## Behavior
+## Behavior at 39a76470
+
+For the vector-quality follow-up, see the final section and
+[quality audit](pdf-print-quality.md).
 
 * Ordinary Windows PDFs without Type 3 page-resource fonts, with image printing disabled,
   retain the exact imposed bytes and old in-process vector submission call.
@@ -94,3 +97,13 @@ host rasterization or Microsoft Print to PDF result does not establish physical 
 
 History: 2026-10-28 — conditional 600 dpi image route and same-executable worker candidate;
 original native fault cause and physical printer acceptance remain unverified.
+
+## Quality follow-up (2026-10-29)
+
+The user reports successful physical output with 39a76470, with reduced fine-detail
+quality. The `fix/pdf-print-quality` candidate keeps worker containment and the
+explicit 600 dpi option, and first tries a restricted Type 3 outline-to-Type 1C
+conversion for automatic jobs. Unsupported glyphs retain the image fallback.
+See [quality audit and acceptance limits](pdf-print-quality.md). The historical
+600 dpi implementation and validation above describe 39a76470; native quality
+acceptance of the follow-up is still pending.

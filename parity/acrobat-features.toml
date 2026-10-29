@@ -8105,7 +8105,7 @@ status = "partial"
 commands = ["print.dialog"]
 tools = ["doc_print"]
 evidence = ["crates/engine/src/print_safety/tests.rs::image_print_removes_type3_preserves_dimensions_and_visible_ink", "crates/automation/tests/automation.rs::image_print_through_tools_is_opt_in_for_saved_pdfs_and_confined", "apps/pdfcraft-cli/tests/image_print.rs::cli_image_export_removes_nested_type3_only_when_requested"]
-notes = "600 dpi lossless RGB tiles of imposed sheets; explicit doc_print print_as_image and Windows checkbox. Windows Type 3 resource jobs automatically use the same-executable isolated worker. Normal native vector jobs unchanged. Raster/worker host regressions do not establish native Windows or physical printer acceptance; barcode scan quality, hardware margins and colour require hardware checks. Bounded jobs fail before submission rather than downsample or print partial sheets."
+notes = "600 dpi lossless RGB tiles of imposed sheets; explicit doc_print print_as_image and Windows checkbox. Windows Type 3 resource jobs automatically use the same-executable isolated worker, first attempting restricted outline-to-Type 1C conversion; unsupported glyphs use the image fallback. Quality follow-up: docs/pdf-print-quality.md; physical acceptance pending. Normal native vector jobs unchanged. Raster/worker host regressions do not establish native Windows or physical printer acceptance; barcode scan quality, hardware margins and colour require hardware checks. Bounded jobs fail before submission rather than downsample or print partial sheets."
 
 [[feature]]
 id = "print.page-setup"
