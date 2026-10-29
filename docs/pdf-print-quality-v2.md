@@ -9,6 +9,16 @@ but fine text, barcode and QR output still look heavier/less clear than Acrobat.
 The photo supports investigating this; perspective, exposure and driver settings
 prevent using it to measure physical strokes or scale.
 
+## User evidence and unresolved Windows inputs
+
+The user confirms the same company printer/paper and improvement from 600dpi
+full-sheet images to Type 1C. The user **tentatively recalls 100% scaling**;
+this is not a verified Acrobat/PdfCraft setting or physical measurement. Neither
+print.prepare/print.submit.end logs, printer model, driver name, validated job
+resolution/quality nor intermediate Windows output is available. These remain
+unknown; no Windows version, model, driver or DPI is assumed. Actual is the main
+controlled comparison, and Fit remains a separately labelled control.
+
 ## Controlled comparison
 
 Exported **paired** PDFs from the same unedited private document, with A4 paper
@@ -47,6 +57,53 @@ For the 1D code, three vertical scanlines each contain 55 black runs. Every
 start/end coordinate and white gap is identical within each before/after pair.
 For QR, the entire selected raster is identical, so module boundaries and gray
 edge values match as well. This does not test physical scanner readability.
+
+## Additional renderer controls (same input, no product setting changes)
+
+Poppler is now pinned explicitly to FreeType=yes, thinlinemode=none, with all four
+font/vector AA combinations. Actual/A4 small-text integrated coverage changes:
+
+| Font AA | Vector AA | 300dpi | 600dpi |
+| --- | --- | ---: | ---: |
+| On | On | -5.669% | -2.256% |
+| Off | On | +2.393% | -2.229% |
+| On | Off | -41.285% | -26.274% |
+| Off | Off | -36.267% | -26.254% |
+
+These controls show that the **representation-dependent rasterization policy** can
+change coverage substantially, even with matching outlines. Disabling AA also
+changes pixel-grid quantization; these results do not isolate autohinting alone.
+The extreme off settings are diagnostic controls, not recommended printer settings.
+Heading/barcode/QR pair pixels remain identical in every combination and DPI.
+
+A third independent renderer, Ghostscript 10.05.1, was run only as an external
+oracle, at the same Actual/A4 geometry and 300/600dpi for both members:
+
+| Text/graphics AlphaBits | 300dpi text coverage change | 600dpi text coverage change |
+| ---: | ---: | ---: |
+| 1/1 | -35.891% | -25.328% |
+| 4/4 | -14.558% | -8.413% |
+
+Again, heading/barcode/QR pixels match within each pair. None of these measured
+controls reproduce the reported general thickening of Type 1C output. This
+supports testing the actual Windows font/path rasterization and job settings,
+without assigning a cause to a Windows component that has not been observed.
+
+The 54x55 QR source contains exactly two RGB colors (black and white), with no
+intermediate-gray source pixels. Gray edges in the software renders are created
+by rendering/sampling, not by grayscale pixels introduced by the converter.
+The low source resolution and noninteger device-pixel mapping are relevant to
+sampling; the appropriate Windows sampling behavior is still unmeasured.
+
+The barcode's predictor encoding was also checked. Its Image BitsPerComponent is
+1, while its PNG predictor uses the default 8-bit components and Columns=208.
+Those predictor rows are byte-stream groups, not necessarily image scanlines:
+118 full 208-byte groups plus a final 26-byte group reconstruct exactly 24,570
+bytes (26 bytes x 945 image rows). Independent manual Sub-filter decoding matches
+Poppler's raw PBM pixels exactly after accounting for PBM's inverse bit convention.
+Forcing predictor BitsPerComponent=1 without reencoding fails with invalid PNG
+filter bytes. No such metadata rewrite was made. A generic decoder's warning/padding
+of the final partial group is not evidence of the company's printer failure.
 
 ## Geometry, font and sampling audit
 
@@ -101,7 +158,8 @@ Changing those now would be an unverified experiment, not an evidence-based fix.
 
 Added a test-only local oracle in `print_safety/quality_tests.rs`. It exports
 paired Actual/Fit PDFs, checks page/Form/image bytes and placement, renders each
-pair with pdftoppm at 300 and 600dpi, and records ROI coverage, gray edges, black
+pair with pdftoppm at 300 and 600dpi under four explicitly recorded font/vector AA
+profiles (FreeType=yes, thinlinemode=none), and records ROI coverage, gray edges, black
 run means and exact scanline boundaries. Selected ROIs can demand exact pixels.
 Two synthetic unit tests prove that thickened strokes, closed barcode gaps and
 gray-edge changes are detected. The module is excluded from product builds.
@@ -122,7 +180,9 @@ optionally `PDFCRAFT_PRINT_QUALITY_REPORT` (local output JSON). Install pdftoppm
 Run `cargo test --profile low-disk -p pdfcraft-engine --lib private_print_quality_pairs -- --ignored`.
 No document or derived raster is uploaded by the test. Missing tools/input fail
 explicitly; ordinary CI declares the private test ignored rather than silently passing.
-The independent MuPDF/FontTools measurements above are additional local oracle work,
+The private test now records 64 ROI rows for this four-region fixture; 48 heading/
+code rows require exact equality. The independent MuPDF/FontTools/Ghostscript
+measurements above are additional local oracle work,
 not part of this automated Poppler test.
 
 Validation: scoped engine tests passed **259**, with 6 declared ignored tests;
@@ -160,3 +220,7 @@ was not performed.
    for physical sizes, keeping Fit as a separate explicit control.
 
 History: 2026-10-29 — controlled v2 audit; no product fix without a confirmed cause.
+
+Follow-up 2026-10-29: recorded tentative 100% recollection and missing Windows
+evidence; added explicit AA controls, third-renderer and predictor audits. Runtime
+printing, image data, scaling, crash containment and all existing features unchanged.

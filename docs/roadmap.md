@@ -167,6 +167,7 @@ M2 (renderer), M7 (content editing), M10 (OCR and Office), M11 (Preflight and st
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-29 | minor | M10: v2 AA control profiles and third-renderer/predictor audits; Windows inputs explicitly unverified, runtime unchanged. Estimates unchanged. |
 | 2026-10-29 | minor | M10: v2 paired conversion audit and private ROI regression oracle; no runtime print change, native quality cause unconfirmed. Estimates unchanged. |
 | 2026-10-29 | minor | M10: restricted Type 3 outline-to-Type 1C quality candidate, isolated image fallback retained; Windows quality acceptance pending. Estimates unchanged. |
 | 2026-10-28 | minor | M10: conditional image printing and isolated Windows worker candidate; host raster/containment regressions, native hardware acceptance pending. Estimates unchanged. |

@@ -119,9 +119,10 @@ fn native_content(doc: &pdfcraft_cos::Document) -> Vec<(String, Vec<u8>)> {
     rows
 }
 
-fn render(path: &Path, out: &Path, dpi: u32) -> Gray {
+fn render(path: &Path, out: &Path, dpi: u32, font_aa: bool, vector_aa: bool) -> Gray {
     let result = Command::new("pdftoppm")
-        .args(["-r", &dpi.to_string(), "-singlefile", "-gray", "-png"])
+        .args(["-r", &dpi.to_string(), "-singlefile", "-gray", "-png", "-freetype", "yes", "-thinlinemode", "none"])
+        .args(["-aa", if font_aa { "yes" } else { "no" }, "-aaVector", if vector_aa { "yes" } else { "no" }])
         .arg(path)
         .arg(out)
         .output()
@@ -205,28 +206,30 @@ fn private_print_quality_pairs_same_renderer_dpi_and_imposition() {
         std::fs::write(&a_path, reference.as_slice()).unwrap();
         std::fs::write(&b_path, candidate).unwrap();
         for dpi in [300, 600] {
-            let a = render(&a_path, &temp.path().join("reference"), dpi);
-            let b = render(&b_path, &temp.path().join("candidate"), dpi);
-            assert_eq!((a.width, a.height), (b.width, b.height), "page raster size changed");
-            for region in &regions {
-                let r = region.rect;
-                assert!(r.iter().all(|v| v.is_finite()) && r[0] >= 0.0 && r[1] >= 0.0 && r[2] > r[0] && r[3] > r[1]);
-                assert!(r[2] <= source_size.0 && r[3] <= source_size.1);
-                // Display y is down; the imposition matrix uses PDF y-up coordinates.
-                let dy = sheets[0].size.1 - source_size.1 * m[3] - m[5];
-                let rect = [r[0] * m[0] + m[4], r[1] * m[3] + dy, r[2] * m[0] + m[4], r[3] * m[3] + dy];
-                assert!(rect.iter().all(|v| *v >= 0.0));
-                let rect = rect.map(|v| (v * f64::from(dpi) / 72.0).round() as usize);
-                let metrics = compare(&a.crop(rect), &b.crop(rect));
-                if region.exact {
-                    assert_eq!(metrics["absolute_error"], 0, "region {} must retain exact pixels", region.name);
+            for (font_aa, vector_aa) in [(true, true), (false, true), (true, false), (false, false)] {
+                let a = render(&a_path, &temp.path().join("reference"), dpi, font_aa, vector_aa);
+                let b = render(&b_path, &temp.path().join("candidate"), dpi, font_aa, vector_aa);
+                assert_eq!((a.width, a.height), (b.width, b.height), "page raster size changed");
+                for region in &regions {
+                    let r = region.rect;
+                    assert!(r.iter().all(|v| v.is_finite()) && r[0] >= 0.0 && r[1] >= 0.0 && r[2] > r[0] && r[3] > r[1]);
+                    assert!(r[2] <= source_size.0 && r[3] <= source_size.1);
+                    // Display y is down; the imposition matrix uses PDF y-up coordinates.
+                    let dy = sheets[0].size.1 - source_size.1 * m[3] - m[5];
+                    let rect = [r[0] * m[0] + m[4], r[1] * m[3] + dy, r[2] * m[0] + m[4], r[3] * m[3] + dy];
+                    assert!(rect.iter().all(|v| *v >= 0.0));
+                    let rect = rect.map(|v| (v * f64::from(dpi) / 72.0).round() as usize);
+                    let metrics = compare(&a.crop(rect), &b.crop(rect));
+                    if region.exact {
+                        assert_eq!(metrics["absolute_error"], 0, "region {} must retain exact pixels", region.name);
+                    }
+                    rows.push(json!({"layout":name,"dpi":dpi,"font_aa":font_aa,"vector_aa":vector_aa,"region":region.name,"matrix":m,"roi_pixels":rect,"metrics":metrics}));
                 }
-                rows.push(json!({"layout":name,"dpi":dpi,"region":region.name,"matrix":m,"roi_pixels":rect,"metrics":metrics}));
             }
         }
     }
     let version = Command::new("pdftoppm").arg("-v").output().unwrap();
-    let report = json!({"renderer":String::from_utf8_lossy(&version.stderr).lines().next(),"rows":rows,
+    let report = json!({"common_options":{"freetype":true,"thin_line_mode":"none"},"renderer":String::from_utf8_lossy(&version.stderr).lines().next(),"rows":rows,
         "limits":"PDF conversion comparison only; no Windows renderer, XPS or physical printer measured. Run widths are thresholded cross-section proxies, not physical stem measurements."});
     if let Some(path) = std::env::var_os("PDFCRAFT_PRINT_QUALITY_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
