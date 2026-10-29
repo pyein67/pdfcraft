@@ -9,8 +9,12 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+craft-print-diagnostics = { workspace = true }
 craft-print = { workspace = true }
 pdfcraft-cos = { workspace = true }
 pdfcraft-content = { workspace = true }
 pdfcraft-model = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

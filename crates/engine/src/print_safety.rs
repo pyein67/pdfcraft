@@ -17,15 +17,32 @@ pub fn compatibility_pdf(pdf: Arc<Vec<u8>>, force_image: bool) -> Result<(Vec<u8
             return Err("Compatibility input byte limit".into());
         }
         if !force_image && !has_type3(pdf.clone())? {
+            craft_print_diagnostics::record("print.compatibility", format_args!("path=original_vector type1c_conversion=false"));
             return Ok(((*pdf).clone(), "original vector".into()));
         }
         if !force_image {
             match outlines::convert(pdf.clone()) {
-                Ok(bytes) => return Ok((bytes, "Type 3 outlines to embedded Type 1C; original sheet geometry and other content retained".into())),
-                Err(reason) => return image_pdf(pdf).map(|bytes| (bytes, format!("600 dpi image fallback: {reason}"))),
+                Ok(bytes) => {
+                    craft_print_diagnostics::record(
+                        "print.compatibility",
+                        format_args!("path=type1c_vector type1c_conversion=true rasterized_entire_pdf=false"),
+                    );
+                    return Ok((bytes, "Type 3 outlines to embedded Type 1C; original sheet geometry and other content retained".into()));
+                }
+                Err(reason) => {
+                    let bytes = image_pdf(pdf)?;
+                    craft_print_diagnostics::record(
+                        "print.compatibility",
+                        format_args!("path=image_fallback type1c_conversion=false image_dpi={IMAGE_DPI}"),
+                    );
+                    return Ok((bytes, format!("600 dpi image fallback: {reason}")));
+                }
             }
         }
-        image_pdf(pdf).map(|bytes| (bytes, "600 dpi image (explicit)".into()))
+        image_pdf(pdf).map(|bytes| {
+            craft_print_diagnostics::record("print.compatibility", format_args!("path=explicit_image type1c_conversion=false image_dpi={IMAGE_DPI}"));
+            (bytes, "600 dpi image (explicit)".into())
+        })
     })?
 }
 
@@ -223,12 +240,23 @@ fn image_pdf_inner(pdf: Arc<Vec<u8>>) -> Result<Vec<u8>, String> {
 /// run in the same application's opt-in worker process, so a driver access violation cannot
 /// close the editor. Never retry a failed submission: sheets might already have been printed.
 pub fn submit(pdf: Vec<u8>, job: &crate::print::spool::Job, force_image: bool) -> Result<String, String> {
+    let context = craft_print_diagnostics::Context::for_pdf(&pdf);
+    craft_print_diagnostics::with_context(context, || {
+        let result = submit_observed(pdf, job, force_image);
+        craft_print_diagnostics::record("print.end", format_args!("success={}", result.is_ok()));
+        result
+    })
+}
+
+fn submit_observed(pdf: Vec<u8>, job: &crate::print::spool::Job, force_image: bool) -> Result<String, String> {
     #[cfg(windows)]
     {
         let pdf = Arc::new(pdf);
         if force_image || has_type3(pdf.clone())? {
+            craft_print_diagnostics::record("print.route", format_args!("path=isolated_compatibility_worker force_image={force_image}"));
             return worker::submit(&pdf, job, force_image);
         }
+        craft_print_diagnostics::record("print.route", format_args!("path=normal_native type1c_conversion=false"));
         crate::print::spool::submit(&pdf, job).map_err(|e| e.to_string())
     }
     #[cfg(not(windows))]

@@ -16,6 +16,8 @@ const TIMEOUT: Duration = Duration::from_secs(15 * 60);
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Ticket {
+    #[serde(default)]
+    diagnostics_job: Option<String>,
     force_image: bool,
     printer: Option<String>,
     copies: u32,
@@ -30,6 +32,7 @@ struct Ticket {
 impl From<&Job> for Ticket {
     fn from(job: &Job) -> Self {
         Self {
+            diagnostics_job: craft_print_diagnostics::capture().map(|c| c.job_id().to_owned()),
             force_image: false,
             printer: job.printer.clone(),
             copies: job.copies,
@@ -143,7 +146,9 @@ pub(super) fn submit(pdf: &[u8], job: &Job, force_image: bool) -> Result<String,
         use std::os::windows::process::CommandExt as _;
         command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW; same binary, no shell.
     }
-    wait(command.spawn().map_err(|e| format!("Cannot start image-print worker: {e}"))?, TIMEOUT)?;
+    let child = command.spawn().map_err(|e| format!("Cannot start image-print worker: {e}"))?;
+    craft_print_diagnostics::record("print.worker.start", format_args!("child_pid={}", child.id()));
+    wait(child, TIMEOUT)?;
     let result: Result<String, String> = serde_json::from_slice(&read_limited(&dir.path().join("result.json"), 64 * 1024)?)
         .map_err(|e| format!("Invalid image-print worker response: {e}"))?;
     result.map(|msg| format!("isolated compatibility print: {msg}"))
@@ -162,9 +167,18 @@ pub(super) fn entry() -> Option<ExitCode> {
     let result = crate::guard(|| {
         let ticket: Ticket = serde_json::from_slice(&read_limited(&directory.join("ticket.json"), 64 * 1024)?).map_err(|e| e.to_string())?;
         let force_image = ticket.force_image;
+        let diagnostics_job = ticket.diagnostics_job.clone();
         let job = ticket.job()?;
-        let (pdf, route) = super::compatibility_pdf(std::sync::Arc::new(read_limited(&directory.join("input.pdf"), super::MAX_BYTES)?), force_image)?;
-        crate::print::spool::submit(&pdf, &job).map(|message| format!("{route}; {message}")).map_err(|e| format!("{route}; {e}"))
+        let input = read_limited(&directory.join("input.pdf"), super::MAX_BYTES)?;
+        let context = craft_print_diagnostics::Context::for_pdf(&input).map(|context| match diagnostics_job.as_deref() {
+            Some(id) => context.inherit_job(id),
+            None => context,
+        });
+        craft_print_diagnostics::with_context(context, || {
+            craft_print_diagnostics::record("print.worker", format_args!("path=isolated_compatibility_worker force_image={force_image}"));
+            let (pdf, route) = super::compatibility_pdf(std::sync::Arc::new(input), force_image)?;
+            crate::print::spool::submit(&pdf, &job).map(|message| format!("{route}; {message}")).map_err(|e| format!("{route}; {e}"))
+        })
     })
     .unwrap_or_else(Err);
     let saved = serde_json::to_vec(&result).map_err(|e| e.to_string()).and_then(|bytes| write_new(&directory.join("result.json"), &bytes));
@@ -223,5 +237,24 @@ mod tests {
         assert!(wait(child, Duration::from_secs(2)).unwrap_err().contains("still open"));
         let child = Command::new("sleep").arg("10").spawn().unwrap();
         assert!(wait(child, Duration::from_millis(10)).unwrap_err().contains("timed out"));
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn worker_protocol_transfers_observation_id_without_changing_job_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let context = craft_print_diagnostics::Context::from_setting(Some(dir.path().join("trace.txt").into_os_string()), b"job").unwrap();
+        let id = context.job_id().to_owned();
+        let job = Job::default();
+        let ticket = craft_print_diagnostics::with_context(Some(context), || Ticket::from(&job));
+        let restored: Ticket = serde_json::from_slice(&serde_json::to_vec(&ticket).unwrap()).unwrap();
+        assert_eq!(restored.diagnostics_job.as_deref(), Some(id.as_str()));
+        assert_eq!(restored.job().unwrap(), job);
+        let mut old = serde_json::to_value(Ticket::from(&job)).unwrap();
+        old.as_object_mut().unwrap().remove("diagnostics_job");
+        assert!(serde_json::from_value::<Ticket>(old).unwrap().diagnostics_job.is_none());
     }
 }

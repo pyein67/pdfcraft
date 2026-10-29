@@ -47,3 +47,25 @@ black-point normalization is unchanged. `lab_bradford_tests` checks independent
 D50/equal-energy neutral and chromatic oracles, D65 identity, and direct/Indexed
 consistency (including an asymmetric chromatic Range), and zero/overflowing
 cone-response fallback.
+
+
+## Opt-in Windows print observations
+
+`craft-print` is vendored from storytold/craft-libs at
+`f03ec27ab2c405969428512178f746183cd55ca0` (MIT OR Apache-2.0), with the original
+src and licenses. Its manifest makes workspace inheritance explicit. The root
+Git-source patch selects it for PdfCraft; it is a workspace member so its portable
+PrintTicket/sheet tests run on Linux. Changes only observe the final validated
+PrintTicket and computed sheet plan and propagate the opt-in thread context.
+
+`winprint` is vendored from storytold/winprint.rs at
+`5f80b9baf6b58937c401656634e42d33f00ddf49` (BSD-3-Clause). Source, build script,
+README and license are retained; upstream binary test fixtures/examples are not
+shipped here. The root Git-source patch selects it transitively from craft-print.
+The existing default-features=false remains in effect (no PDFium). Trailing whitespace
+in upstream XML test literals was removed without changing XML values. Observations
+are at the existing post-DocumentPropertiesW buffer, actual CreatePrintControl
+arguments and AddPage call. No rendering, ticket options or DPI formula changes.
+Both packages use the std-only craft-print-diagnostics crate for a bounded,
+explicitly enabled file sink. Diagnostic failures are ignored; driver private
+DEVMODE data and PDF contents are never logged.

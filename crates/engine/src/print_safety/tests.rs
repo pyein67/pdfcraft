@@ -352,3 +352,19 @@ fn unconverted_default_encoding_glyphs_never_disappear() {
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "quality_tests.rs"]
 mod quality;
+
+#[test]
+fn compatibility_diagnostics_preserve_type1c_and_original_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    for input in [outline_fixture(false), Arc::new(pdf(false, false))] {
+        let baseline = compatibility_pdf(input.clone(), false).unwrap();
+        let path = dir.path().join(if baseline.1.contains("Type 1C") { "cff.txt" } else { "original.txt" });
+        let observed = craft_print_diagnostics::with_context(
+            craft_print_diagnostics::Context::from_setting(Some(path.clone().into_os_string()), &input),
+            || compatibility_pdf(input.clone(), false).unwrap(),
+        );
+        assert_eq!(observed, baseline);
+        let trace = std::fs::read_to_string(path).unwrap();
+        assert!(trace.contains(if baseline.1.contains("Type 1C") { "type1c_conversion=true" } else { "type1c_conversion=false" }));
+    }
+}

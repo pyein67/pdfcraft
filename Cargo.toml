@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/*", "xtask"]
+members = ["crates/*", "apps/*", "xtask", "vendor/craft-print"]
 exclude = ["vendor"]
 default-members = ["crates/*", "apps/pdfcraft", "apps/pdfcraft-cli", "xtask"]
 
@@ -17,6 +17,7 @@ craft-ui = { git = "https://github.com/storytold/craft-libs", version = "0.1.0",
 # Shared system spooler; document composition remains in pdfcraft-print.
 craft-print = { git = "https://github.com/storytold/craft-libs", version = "0.1.0", rev = "f03ec27ab2c405969428512178f746183cd55ca0" }
 # internal
+craft-print-diagnostics = { path = "crates/print-diagnostics" }
 pdfcraft-geom = { path = "crates/geom", version = "0.8.0" }
 pdfcraft-filters = { path = "crates/filters", version = "0.8.0" }
 pdfcraft-cos = { path = "crates/cos", version = "0.8.0" }
@@ -112,3 +113,9 @@ hayro-jbig2 = { path = "vendor/hayro-jbig2" }
 lopdf = { path = "vendor/lopdf" }
 winit = { path = "vendor/winit" }
 egui-wgpu = { path = "vendor/egui-wgpu" }
+
+[patch."https://github.com/storytold/craft-libs"]
+craft-print = { path = "vendor/craft-print" }
+
+[patch."https://github.com/storytold/winprint.rs"]
+winprint = { path = "vendor/winprint" }

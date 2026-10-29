@@ -643,3 +643,29 @@ fn paper_matching_accepts_rounded_metric_sizes_but_not_custom_or_invalid_sizes()
         assert_eq!(matching_paper(size), None);
     }
 }
+
+#[test]
+fn diagnostics_observe_actual_and_fit_without_changing_pdf_bytes() {
+    let mut doc = fixture(1);
+    let page = pdfcraft_model::pages(&doc)[0].obj;
+    let mut dict = doc.get(page).as_dict().unwrap().clone();
+    dict.set(b"MediaBox".to_vec(), Object::Array(vec![0.into(), 0.into(), 595.into(), 842.into()]));
+    doc.set(page, Object::Dict(dict));
+    let dir = tempfile::tempdir().unwrap();
+    for (mode, expected) in [(SizeMode::Actual, 1.0), (SizeMode::Fit, 0.9399663865795724)] {
+        let settings = Settings { pages: vec![0], paper: (595.28, 841.89), layout: Layout::Size(mode), ..Settings::default() };
+        let baseline = impose(&doc, &settings).unwrap();
+        let path = dir.path().join(format!("{mode:?}.txt"));
+        let actual = craft_print_diagnostics::with_context(
+            craft_print_diagnostics::Context::from_setting(Some(path.clone().into_os_string()), &baseline),
+            || impose(&doc, &settings).unwrap(),
+        );
+        assert_eq!(actual, baseline);
+        let trace = std::fs::read_to_string(path).unwrap();
+        let placement = trace.lines().find(|line| line.contains("stage=layout.placement")).unwrap();
+        let scale: f64 = placement.split("scale_x=").nth(1).unwrap().split_whitespace().next().unwrap().parse().unwrap();
+        assert!((scale - expected).abs() < 1e-9, "{placement}");
+        assert!(trace.contains("scope=PDF_content_not_physical_output"));
+        assert!(trace.contains(if mode == SizeMode::Actual { "serialized_scale_x=Some(1.0)" } else { "serialized_scale_x=Some(0.94)" }));
+    }
+}

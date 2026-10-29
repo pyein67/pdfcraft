@@ -722,7 +722,42 @@ pub fn impose(src: &Document, settings: &Settings) -> Result<Vec<u8>, PrintError
     if doc.trailer().contains(b"Encrypt") {
         doc.remove_encryption();
     }
-    Ok(write_full(&doc, &SaveOptions::default())?)
+    let bytes = write_full(&doc, &SaveOptions::default())?;
+    craft_print_diagnostics::with_context(craft_print_diagnostics::Context::for_pdf(&bytes).or_else(craft_print_diagnostics::capture), || {
+        if !craft_print_diagnostics::enabled() {
+            return;
+        }
+        for (sheet_index, sheet) in sheets.iter().enumerate().take(1024) {
+            craft_print_diagnostics::record(
+                "layout.sheet",
+                format_args!("sheet={} size_pt={:?} layout={:?}", sheet_index + 1, sheet.size, settings.layout),
+            );
+            for placement in sheet.placed.iter().take(256) {
+                let [a, b, c, d, _, _] = placement.matrix.0;
+                // n() is the same four-decimal serialization used by the actual cm above.
+                let serialized = placement.matrix.0.map(n);
+                let values = serialized.each_ref().map(|s| s.parse::<f64>().ok());
+                let serialized_scale_x = values[0].zip(values[1]).map(|(a, b)| a.hypot(b));
+                let serialized_scale_y = values[2].zip(values[3]).map(|(c, d)| c.hypot(d));
+                let normalization = views.get(placement.page).map(|v| Matrix(*v).invert().unwrap_or_default().0.map(n));
+                craft_print_diagnostics::record(
+                    "layout.placement",
+                    format_args!(
+                        "sheet={} source_page={} matrix={:?} planned_scale_x={} planned_scale_y={} serialized_cm={serialized:?} serialized_scale_x={serialized_scale_x:?} serialized_scale_y={serialized_scale_y:?} normalization_cm={normalization:?} scope=PDF_content_not_physical_output",
+                        sheet_index + 1,
+                        placement.page + 1,
+                        placement.matrix.0,
+                        a.hypot(b),
+                        c.hypot(d)
+                    ),
+                );
+            }
+        }
+        if sheets.len() > 1024 {
+            craft_print_diagnostics::record("layout.limit", format_args!("sheets={} reported=1024", sheets.len()));
+        }
+    });
+    Ok(bytes)
 }
 
 /// Which source pages land on each sheet (for previews and the sheet count).

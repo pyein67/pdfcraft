@@ -1145,13 +1145,20 @@ dependencies = [
 [[package]]
 name = "craft-print"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=f03ec27ab2c405969428512178f746183cd55ca0#f03ec27ab2c405969428512178f746183cd55ca0"
 dependencies = [
+ "craft-print-diagnostics",
  "miniz_oxide 0.8.9",
  "roxmltree",
  "tempfile",
  "winprint",
  "winsafe",
+]
+
+[[package]]
+name = "craft-print-diagnostics"
+version = "0.8.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]
@@ -4039,6 +4046,7 @@ name = "pdfcraft-engine"
 version = "0.8.0"
 dependencies = [
  "chrono",
+ "craft-print-diagnostics",
  "icu_properties",
  "idna",
  "image",
@@ -4205,9 +4213,11 @@ name = "pdfcraft-print"
 version = "0.8.0"
 dependencies = [
  "craft-print",
+ "craft-print-diagnostics",
  "pdfcraft-content",
  "pdfcraft-cos",
  "pdfcraft-model",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
@@ -7784,8 +7794,8 @@ dependencies = [
 [[package]]
 name = "winprint"
 version = "0.2.1"
-source = "git+https://github.com/storytold/winprint.rs?rev=5f80b9baf6b58937c401656634e42d33f00ddf49#5f80b9baf6b58937c401656634e42d33f00ddf49"
 dependencies = [
+ "craft-print-diagnostics",
  "flate2",
  "fmt-derive",
  "reqwest",

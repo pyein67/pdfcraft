@@ -468,3 +468,5 @@ Newest first: the date, what moved, and the new overall estimate.
 - 2026-10-29 — M10: v2 same-renderer 300/600 dpi quality audit and private ROI regression oracle; glyph geometry and original code images preserved. Native Windows quality cause unconfirmed; no runtime printing change. See docs/pdf-print-quality-v2.md.
 
 - 2026-10-29 — M10 v2 follow-up: explicit font/vector AA controls and third-renderer comparison, binary QR/predictor audit; tentative 100% recollection recorded, native printer details remain unknown. No runtime print changes.
+
+2026-10-29: Implemented default-off actual-job Windows print diagnostics on feat/windows-print-job-diagnostics. Patched craft-print/winprint are wired by Cargo source patches; observe validated ticket, normalized public DEVMODE, actual D2D rasterDPI, compatibility route and serialized placement. No rendering/settings change; Windows provider execution remains pending.
