@@ -464,3 +464,5 @@ Newest first: the date, what moved, and the new overall estimate.
 - **2026-10-12 (M8):** Redaction cleans indirect and form structure references, preserving surviving form tags.
 
 - 2026-10-29 — M10: restricted Type 3 outline-to-Type 1C compatibility printing candidate; preserve sheet geometry and other vector content, retain isolated 600 dpi fallback. Scale/DPI audit in docs/pdf-print-quality.md; Windows quality acceptance pending.
+
+- 2026-10-29 — M10: v2 same-renderer 300/600 dpi quality audit and private ROI regression oracle; glyph geometry and original code images preserved. Native Windows quality cause unconfirmed; no runtime printing change. See docs/pdf-print-quality-v2.md.

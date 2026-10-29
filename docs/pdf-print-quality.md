@@ -105,3 +105,10 @@ guarantee identical driver rendering. Explicit image printing remains the escape
 
 History: 2026-10-29 — restricted vector compatibility candidate; no GitHub push or
 Windows executable build authorized by this task.
+
+## Second quality audit
+
+The user reports successful Type 1C output with remaining heaviness/blur. See
+[the controlled v2 comparison](pdf-print-quality-v2.md): geometry and code data
+are preserved; reference-renderer measurements do not reproduce the photographed
+weight increase. The v2 branch adds tests and analysis without a runtime print change.

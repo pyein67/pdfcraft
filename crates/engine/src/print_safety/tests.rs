@@ -348,3 +348,7 @@ fn unconverted_default_encoding_glyphs_never_disappear() {
     assert!(route.contains("unmapped glyph procedures"), "{route}");
     assert!(!has_type3(Arc::new(bytes)).unwrap());
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "quality_tests.rs"]
+mod quality;
