@@ -1,0 +1,193 @@
+name: Windows x64 Korean build (manual)
+run-name: Windows x64 v0.15 print test — ${{ inputs.source_sha || '8c4388f09111f2527f806a43c8fe058717ea9956' }}
+
+# Build-only branch copy of the existing dispatcher; main and application refs stay unchanged.
+# Push is restricted to this build branch because the connected client has no dispatch API.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact approved application commit
+        required: true
+        type: string
+        default: 8c4388f09111f2527f806a43c8fe058717ea9956
+  push:
+    branches: [build/v015-windows-x64-8c4388f0]
+    paths: [.github/workflows/windows-korean-manual.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v015-portable-${{ inputs.source_sha || '8c4388f09111f2527f806a43c8fe058717ea9956' }}
+  cancel-in-progress: false
+
+jobs:
+  windows-x64:
+    if: github.repository == 'pyein67/pdfcraft'
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: source
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: '-C target-feature=+crt-static'
+      CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+      CRAFT_FONTS_REQUIRED: '1'
+      PDFCRAFT_REQUIRE_WINRES: '1'
+      SOURCE_SHA: ${{ inputs.source_sha || '8c4388f09111f2527f806a43c8fe058717ea9956' }}
+      PDFCRAFT_BUILD_SHA: ${{ inputs.source_sha || '8c4388f09111f2527f806a43c8fe058717ea9956' }}
+    steps:
+      - name: Check out the exact application source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha || '8c4388f09111f2527f806a43c8fe058717ea9956' }}
+          path: source
+          persist-credentials: false
+      - name: Verify approved source identity
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SOURCE_SHA -cne '8c4388f09111f2527f806a43c8fe058717ea9956') { throw 'This build branch is restricted to the approved commit.' }
+          $sha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -or $sha -cne $env:SOURCE_SHA) { throw 'Application source SHA mismatch.' }
+          "Application source: $sha" >> $env:GITHUB_STEP_SUMMARY
+      - name: Check out the official v0.15.0 font input
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+          persist-credentials: false
+      - name: Install pinned Windows x64 toolchain
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          if ($LASTEXITCODE) { throw 'Rust installation failed.' }
+          rustup target add x86_64-pc-windows-msvc --toolchain 1.95.0
+          if ($LASTEXITCODE) { throw 'MSVC target installation failed.' }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: source -> ../target
+          key: v015-msvc-x64-static-rust-1.95
+          cache-all-crates: true
+          cache-on-failure: true
+      - name: Build exact-source Windows x64 executables
+        id: build
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if (!$vs) { throw 'MSVC build tools are missing.' }
+          Import-Module (Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:PDFCRAFT_BUILD_DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+          cargo +1.95.0 build --release --locked -p pdfcraft -p pdfcraft-cli --target x86_64-pc-windows-msvc *>&1 | Tee-Object (Join-Path $env:RUNNER_TEMP 'v015-build.log')
+          if ($LASTEXITCODE) { throw 'Windows compilation failed.' }
+          git diff --exit-code
+          if ($LASTEXITCODE -or (git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA) { throw 'Source changed during build.' }
+      - name: Run print regressions without printing
+        id: tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo +1.95.0 test --release --locked -p pdfcraft-print --lib --target x86_64-pc-windows-msvc *>&1 | Tee-Object (Join-Path $env:RUNNER_TEMP 'v015-print-tests.log')
+          if ($LASTEXITCODE) { throw 'Windows print regression tests failed.' }
+      - name: Package independent portable ZIP
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release'
+          $name = 'pdfcraft-0.15.0-windows-x64-8c4388f0-portable-unsigned'
+          $stage = Join-Path $env:RUNNER_TEMP $name
+          $dist = Join-Path $env:RUNNER_TEMP 'v015-dist'
+          New-Item -ItemType Directory $stage,$dist | Out-Null
+          foreach ($pair in @(@('pdfcraft.exe',2),@('pdfcraft-cli.exe',3))) {
+            $exe = Join-Path $bin $pair[0]
+            $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($exe))
+            try {
+              if ($reader.ReadUInt16() -ne 0x5a4d) { throw 'Invalid DOS header.' }
+              $reader.BaseStream.Position = 0x3c
+              $pe = $reader.ReadInt32()
+              if ($pe -lt 64 -or $pe -gt $reader.BaseStream.Length - 96) { throw 'Invalid PE offset.' }
+              $reader.BaseStream.Position = $pe
+              if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) { throw 'Not a Windows x64 executable.' }
+              $reader.BaseStream.Position = $pe + 24
+              if ($reader.ReadUInt16() -ne 0x20b) { throw 'Not PE32+.' }
+              $reader.BaseStream.Position = $pe + 24 + 68
+              if ($reader.ReadUInt16() -ne $pair[1]) { throw 'Unexpected GUI/console subsystem.' }
+            } finally { $reader.Dispose() }
+            Copy-Item $exe $stage
+          }
+          foreach ($file in @('LICENSE-MIT','LICENSE-APACHE','NOTICE','ATTRIBUTION.md')) { Copy-Item $file $stage }
+          Copy-Item 'assets/app-icon/LICENSE-document.txt' $stage
+          Copy-Item 'packaging/windows/portable.txt' $stage
+          Copy-Item 'docs/v015-print-crash-a4.md' $stage
+          Copy-Item 'docs/v015-paper-query-recovery.md' $stage
+          . ./packaging/windows/font-notices.ps1
+          $fontDir = New-Item -ItemType Directory (Join-Path $stage 'font-licences')
+          foreach ($notice in @(Get-CraftFontNotices $env:CRAFT_FONTS_DIR $true)) {
+            Copy-Item -LiteralPath $notice.FullName -Destination (Join-Path $fontDir.FullName "OFL-$($notice.Directory.Name).txt")
+          }
+          $fontSha = (git -C $env:CRAFT_FONTS_DIR rev-parse HEAD).Trim()
+          if ($fontSha -cne 'b076417b5880bd4154bd22f00695b1d28c6bea83') { throw 'Font input SHA mismatch.' }
+          @{
+            SourceCommit = $env:SOURCE_SHA
+            WorkflowCommit = $env:WORKFLOW_SHA
+            Version = '0.15.0'
+            Target = 'x86_64-pc-windows-msvc'
+            Toolchain = '1.95.0'
+            CraftFontsCommit = $fontSha
+            PrintUnitTests = $env:TEST_OUTCOME
+            PhysicalPrinterTest = 'NOT_RUN'
+            NativePrintToPdfProbe = 'NOT_RUN'
+            PortableMode = 'portable.txt; writable PdfCraftData beside the executable'
+            OptionalOcrModels = 'NOT_BUNDLED'
+            Signed = $false
+            ExecutableSHA256 = (Get-FileHash (Join-Path $stage 'pdfcraft.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content (Join-Path $stage 'BUILD-INFO.json') -Encoding utf8
+          @(
+            'PdfCraft v0.15.0 print test / 8c4388f0 / unsigned Windows x64',
+            'Extract the ENTIRE ZIP into a NEW writable folder (for example, a folder on your Desktop).',
+            'Close other PdfCraft instances first, then run pdfcraft.exe from this folder.',
+            'Keep portable.txt beside the EXE. Settings/logs stay in PdfCraftData beside it.',
+            'Do not extract over an installed PdfCraft, run an installer, or register file associations.',
+            'If the folder is not writable, portable mode can fall back to the installed user profile; choose a writable folder.',
+            'Printing needs no optional OCR models; those are not bundled in this print-test ZIP.',
+            'Check BUILD-INFO.json for the exact source, test outcome and executable checksum.',
+            'Paper diagnostics are enabled in normal logging: PdfCraftData/logs/pdfcraft.log (and rotated pdfcraft.*.log).',
+            'From this folder in PowerShell: Select-String -Path .\PdfCraftData\logs\pdfcraft*.log -SimpleMatch print.paper | ForEach-Object { $_.Line }',
+            'Open Print and select the affected printer. For a delay, leave the dialog open at least 10 seconds.',
+            'Keep print.paper request, phase, HRESULT, optional, timeout and result lines; no PDF file is needed for paper discovery.',
+            'Physical printer output, actual driver PrintTicket and Adobe-equivalent quality remain UNVERIFIED.',
+            'Saved paper choices take priority; new Korean Windows portable profiles start at A4 when supported.',
+            'Fit behavior is unchanged; select A4 and Actual 100% when comparing with Acrobat Actual 100%.'
+          ) | Set-Content (Join-Path $stage 'READ-ME-FIRST.txt') -Encoding utf8
+          $zip = Join-Path $dist "$name.zip"
+          Compress-Archive -Path $stage -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content (Join-Path $dist 'SHA256SUMS.txt') -Encoding ascii
+          "Portable ZIP: $name.zip" >> $env:GITHUB_STEP_SUMMARY
+          "SHA256: $hash" >> $env:GITHUB_STEP_SUMMARY
+          "Print tests: $($env:TEST_OUTCOME); physical printer test: NOT RUN." >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload Windows x64 portable ZIP and checksum
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pdfcraft-0.15.0-windows-x64-8c4388f0-portable-unsigned
+          path: ${{ runner.temp }}/v015-dist/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Keep compilation and unit test logs only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: v015-windows-build-logs-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/v015-build.log
+            ${{ runner.temp }}/v015-print-tests.log
+          if-no-files-found: ignore
+          retention-days: 30
