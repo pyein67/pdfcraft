@@ -39,8 +39,11 @@ Annotation appearances receive unused XObject names, preserving existing page re
 
 The GUI Print dialog remembers its last selected paper size across application sessions,
 including when Print is cancelled. The preference stores a canonical name such as `A4`;
-unrecognized saved values retain the current selection (US Letter on a fresh app).
-This change does not alter persistence of other print preferences.
+unrecognized saved values retain the current selection. On a fresh Korean Windows app
+that selection is A4; elsewhere it remains US Letter. The Windows desktop reads supported
+media in the background: an unsupported selection uses valid printer media for the preview
+and job while keeping the remembered selection for other printers. Pending or unreadable
+media discovery stops submission. This does not write printer defaults or change Fit/Actual.
 Headless `doc_print` defaults are unchanged.
 
 `spool` delegates discovery, driver options, preferences and submission to
@@ -86,3 +89,13 @@ a matching page. On Windows craft-print sends the sheets as vectors with a Print
 for the sheet's exact paper and no scaling (#599's approach), validated by the driver:
 a job is refused, not shrunk, when the driver lacks the paper or would change it. Verify
 the driver's paper settings and physical calibration before relying on drawing scale.
+
+## Windows Type 3 compatibility
+
+At the Windows spool boundary only, final sheets with Type 3 resources are submitted in a
+same-executable worker. Supported uncoloured outline fonts become embedded Type 1C, retaining
+other page content and image streams. Unsupported glyph paint is refused; no whole-page image
+fallback is automatic. A native worker crash reports an error and never triggers a retry.
+The desktop and CLI install `compatibility::worker_entry()` before normal startup. Ordinary
+PDFs retain the official shared spooler and byte stream. Native/physical output still needs
+Windows validation; see [scope and verification](../../docs/v015-print-crash-a4.md).

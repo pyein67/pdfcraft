@@ -59,6 +59,8 @@ pub struct PrintDraft {
     pub as_image: bool,
     pub dpi: f64,
     pub paper: usize,
+    /// Read-only media query for one printer; None result means still loading.
+    pub paper_capabilities: Option<(String, Option<super::PaperResult>)>,
     /// The paper chosen before Label put label stock in, so leaving Label gives it back (#3564).
     pub paper_before_label: Option<usize>,
     /// The sheet shown in the preview (0-based).
@@ -118,7 +120,8 @@ impl Default for PrintDraft {
             content: Content::DocumentAndMarkups,
             as_image: false,
             dpi: 300.0,
-            paper: 0,
+            paper: print::paper::initial(cfg!(windows), system_paper_locale().as_deref()),
+            paper_capabilities: None,
             paper_before_label: None,
             sheet: 0,
             current_page: 0,
@@ -135,7 +138,34 @@ impl Default for PrintDraft {
     }
 }
 
+fn system_paper_locale() -> Option<String> {
+    #[cfg(windows)]
+    {
+        sys_locale::get_locale()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
 impl PrintDraft {
+    /// Effective sheet for preview and submission. The remembered selection is never replaced
+    /// by a printer-specific fallback (not even special label stock).
+    pub fn effective_paper(&self) -> Result<print::paper::Paper, String> {
+        let (name, size) = PAPERS.get(self.paper).copied().unwrap_or(PAPERS[0]);
+        let wanted = print::paper::Paper { name: name.into(), size };
+        if let Some((printer, result)) = &self.paper_capabilities
+            && self.printer.as_deref() == Some(printer.as_str())
+        {
+            return match result {
+                Some(Ok(caps)) => print::paper::resolve(&wanted, caps),
+                Some(Err(_)) => Err("Printer paper could not be read; reopen Print or select another printer.".into()),
+                None => Err("Reading printer paper…".into()),
+            };
+        }
+        Ok(wanted)
+    }
+
     /// Choose Page Sizing & Handling. Label loads label stock and remembers the paper it
     /// replaced; leaving Label gives that paper back, unless another one was picked meanwhile.
     pub fn set_handling(&mut self, handling: Handling) {
@@ -192,7 +222,7 @@ impl PrintDraft {
         };
         Ok(print::Settings {
             pages,
-            paper: PAPERS[self.paper.min(PAPERS.len() - 1)].1,
+            paper: self.effective_paper()?.size,
             orientation: self.orientation,
             layout,
             content: self.content,
@@ -231,7 +261,7 @@ impl PrintDraft {
             }
             .into_iter()
             // The sheet the PDF was laid out on, not the queue's default paper.
-            .chain(print::media_option(self.paper))
+            .chain(self.effective_paper().ok().and_then(|p| PAPERS.iter().position(|(_, size)| *size == p.size)).and_then(print::media_option))
             .collect(),
         }
     }

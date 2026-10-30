@@ -29,6 +29,15 @@ pub(crate) const LABEL_CROP_PAGES: usize = 50;
 /// the network. Without a source the dialog reads them as it opens, so tests stay deterministic.
 pub type PrinterSource = std::sync::Arc<dyn Fn() -> Vec<spool::Printer> + Send + Sync>;
 
+/// Result of a read-only printer media query, never an actual print job.
+pub type PaperResult = Result<print::paper::Capabilities, String>;
+/// Read-only supported media for one printer; native calls run off the GUI thread.
+pub type PaperSource = std::sync::Arc<dyn Fn(&str) -> PaperResult + Send + Sync>;
+/// Read printer media without creating a print job or writing driver defaults.
+pub fn system_papers() -> PaperSource {
+    std::sync::Arc::new(print::paper::capabilities)
+}
+
 /// Where a printer's driver options come from: the spooler's (`spool::printer_options_in`, in the
 /// UI language) unless a test stands in. Called off the GUI thread.
 pub type OptionsSource = std::sync::Arc<dyn Fn(&str) -> Vec<spool::PrinterOption> + Send + Sync>;
@@ -52,6 +61,8 @@ pub(crate) struct PrintTasks {
     /// The driver options being read, per printer (`read_options_in_background`).
     #[cfg(not(target_arch = "wasm32"))]
     options: Vec<(String, std::sync::mpsc::Receiver<Vec<spool::PrinterOption>>)>,
+    #[cfg(not(target_arch = "wasm32"))]
+    papers: Option<(String, std::sync::mpsc::Receiver<PaperResult>)>,
     /// The browser print being drawn, a sheet a frame (`web_print`).
     #[cfg(target_arch = "wasm32")]
     web_job: Option<crate::web_print::WebPrintJob>,
@@ -157,7 +168,12 @@ impl PdfCraftApp {
             (true, Which::Selected) => Which::All,
             (true, other) => other,
         };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.print_tasks.papers = None;
+        }
         self.print_draft = PrintDraft {
+            paper_capabilities: None,
             crops: Vec::new(),
             crop_pages: None,
             printers,
@@ -275,7 +291,43 @@ impl PdfCraftApp {
     }
 
     /// Pick up a printer list, driver options or a spooled job that finished (each frame).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn poll_paper(&mut self) {
+        if let Some((name, rx)) = &self.print_tasks.papers {
+            let result = match rx.try_recv() {
+                Ok(result) => Some(result),
+                Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err("Paper query stopped".into())),
+            };
+            if let Some(result) = result {
+                if self.print_draft.printer.as_deref() == Some(name.as_str()) {
+                    self.print_draft.paper_capabilities = Some((name.clone(), Some(result)));
+                }
+                self.print_tasks.papers = None;
+            }
+        }
+        if self.dialog != Some(crate::Dialog::Print) {
+            return;
+        }
+        let Some(source) = self.paper_source.clone() else { return };
+        let Some(printer) = self.print_draft.printer.clone() else {
+            return;
+        };
+        if self.print_draft.paper_capabilities.as_ref().is_some_and(|(name, _)| *name == printer) {
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.print_draft.paper_capabilities = Some((printer.clone(), None));
+        self.print_tasks.papers = Some((printer.clone(), rx));
+        let wake = WakeOnExit(self.ctx.clone());
+        std::thread::spawn(move || {
+            let _wake = wake;
+            let _ = tx.send(source(&printer));
+        });
+    }
     pub(crate) fn poll_print(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.poll_paper();
         #[cfg(target_arch = "wasm32")]
         self.poll_web_print();
         #[cfg(not(target_arch = "wasm32"))]
@@ -388,6 +440,8 @@ impl PdfCraftApp {
     /// a preset path returns `true` once the save picker is showing; the file is written on a
     /// later frame, when the user has chosen where.
     pub fn print_now(&mut self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.poll_paper();
         // What's typed in a form field is part of what's printed (#166).
         if !self.commit_form_typing() {
             return false;
@@ -427,8 +481,8 @@ impl PdfCraftApp {
         }
     }
 
-    /// Spool a job off the UI thread: on Windows every sheet is rendered at the printer's
-    /// resolution first, which can take minutes for a long document. The dialog closes at once,
+    /// Spool a job off the UI thread: native rendering and submission can take minutes for a
+    /// long document. The dialog closes at once,
     /// the progress card counts the sheets as they reach the spooler, and the spooler's answer
     /// arrives as a notice.
     #[cfg(not(target_arch = "wasm32"))]
@@ -634,6 +688,37 @@ pub(crate) fn preview_rasters(d: &PrintDraft, sizes: &[(f64, f64)], labels: &[St
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn late_media_results_never_select_paper_for_a_different_printer() {
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::{Duration, Instant};
+        let (release, hold) = mpsc::channel();
+        let hold = Arc::new(Mutex::new(hold));
+        let mut app = PdfCraftApp::new();
+        app.dialog = Some(crate::Dialog::Print);
+        app.print_draft.printer = Some("Slow".into());
+        app.paper_source = Some(Arc::new(move |name| {
+            if name == "Slow" {
+                hold.lock().unwrap().recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+            Ok(print::paper::Capabilities { papers: vec![print::paper::Paper { name: name.into(), size: (300., 400.) }], default: Some(0) })
+        }));
+        app.poll_paper();
+        assert!(app.print_draft.settings(1, &[]).is_err());
+        app.print_draft.printer = Some("Current".into());
+        app.poll_paper();
+        let stop = Instant::now() + Duration::from_secs(5);
+        while app.print_draft.effective_paper().is_err() && Instant::now() < stop {
+            app.poll_paper();
+            std::thread::yield_now();
+        }
+        assert_eq!(app.print_draft.effective_paper().unwrap().name, "Current");
+        release.send(()).unwrap();
+        app.poll_paper();
+        assert_eq!(app.print_draft.paper_capabilities.as_ref().unwrap().0, "Current");
+    }
     use super::*;
 
     #[test]

@@ -13,6 +13,9 @@ fn harness_with_settings(settings: Option<String>) -> Harness<'static, PdfCraftA
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
         let mut app = PdfCraftApp::new();
         app.set_option("language", "en").unwrap();
+        // Workflow fixtures use explicit Letter on every host; the factory Korean-Windows
+        // choice is tested separately by paper::initial, without depending on this PC's locale.
+        app.restore(r#"{"print_paper":"US Letter"}"#);
         if let Some(json) = &settings {
             app.restore(json);
         }
@@ -912,4 +915,72 @@ fn a_booklet_decides_two_sided_itself() {
     h.run_steps(2);
     assert!(h.query_by_role_and_label(Role::ComboBox, "Two-sided:").is_some());
     assert_eq!(h.state().print_draft.job("x").duplex, Some(Duplex::LongEdge), "back to the choice");
+}
+
+#[test]
+fn supported_paper_is_shared_by_preview_pdf_and_spool_job_without_overwriting_preference() {
+    use pdfcraft_engine::print::{
+        self, PAPERS,
+        paper::{Capabilities, Paper},
+    };
+    let a4 = PAPERS.iter().position(|(n, _)| *n == "A4").unwrap();
+    let label = PAPERS.iter().position(|(n, _)| *n == "4 × 6 in").unwrap_or(print::LABEL_PAPER);
+    let mut app = PdfCraftApp::new();
+    app.restore(r#"{"print_paper":"A4"}"#);
+    app.open_bytes("form.pdf", None, include_bytes!("../data/form.pdf").to_vec()).unwrap();
+    let id = app.views[0].id;
+    let d = &mut app.print_draft;
+    d.paper = a4;
+    d.printer = Some("Office".into());
+    d.paper_capabilities =
+        Some(("Office".into(), Some(Ok(Capabilities { papers: vec![Paper { name: "A4".into(), size: PAPERS[a4].1 }], default: Some(0) }))));
+    let settings = d.settings(1, &[]).unwrap();
+    assert_eq!(settings.paper, PAPERS[a4].1);
+    assert_eq!(settings.layout, print::Layout::Size(print::SizeMode::Fit));
+    let preview = print::layout(&[(595., 842.)], &settings).unwrap();
+    assert_eq!(preview[0].size, settings.paper);
+    assert!(d.job("test").options.contains(&("media".into(), "A4".into())));
+    let bytes = app.session.print_pdf(id, &settings).unwrap();
+    let pdf = pdfcraft_cos::Document::open(std::sync::Arc::new(bytes)).unwrap();
+    let pages = pdfcraft_model::pages(&pdf);
+    let size = pages[0].display_size(&pdf);
+    assert!((size.0 - settings.paper.0).abs() < 0.01 && (size.1 - settings.paper.1).abs() < 0.01);
+    // Label-only device: use actual supported dimensions; never overwrite the saved A4 choice.
+    let d = &mut app.print_draft;
+    d.paper_capabilities = Some((
+        "Office".into(),
+        Some(Ok(Capabilities { papers: vec![Paper { name: "Label stock".into(), size: PAPERS[label].1 }], default: Some(0) })),
+    ));
+    assert_eq!(d.effective_paper().unwrap().name, "Label stock");
+    assert_eq!(d.settings(1, &[]).unwrap().paper, PAPERS[label].1);
+    assert_eq!(d.paper, a4);
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&app.persist()).unwrap()["print_paper"], "A4");
+    app.print_draft.printer = None;
+    assert_eq!(app.print_draft.settings(1, &[]).unwrap().paper, PAPERS[a4].1);
+}
+
+#[test]
+fn saved_paper_wins_and_loading_or_failed_capabilities_never_forces_a4() {
+    use pdfcraft_engine::print::{
+        self, PAPERS,
+        paper::{Capabilities, Paper},
+    };
+    let a4 = PAPERS.iter().position(|(n, _)| *n == "A4").unwrap();
+    for (name, _) in PAPERS {
+        let mut app = PdfCraftApp::new();
+        app.print_draft.paper = a4;
+        app.restore(&serde_json::json!({"print_paper":name}).to_string());
+        let wanted = app.print_draft.paper;
+        app.print_draft.printer = Some("Office".into());
+        app.print_draft.paper_capabilities =
+            Some(("Office".into(), Some(Ok(Capabilities { papers: vec![Paper { name: name.into(), size: PAPERS[wanted].1 }], default: Some(0) }))));
+        assert_eq!(app.print_draft.settings(1, &[]).unwrap().paper, PAPERS[wanted].1);
+        assert_eq!(app.print_draft.size, print::SizeMode::Fit);
+    }
+    let mut d = pdfcraft_ui_egui::PrintDraft { paper: a4, printer: Some("Office".into()), ..Default::default() };
+    d.paper_capabilities = Some(("Office".into(), None));
+    assert!(d.settings(1, &[]).is_err());
+    d.paper_capabilities = Some(("Office".into(), Some(Err("driver unavailable".into()))));
+    assert!(d.settings(1, &[]).is_err());
+    assert_eq!(d.paper, a4);
 }

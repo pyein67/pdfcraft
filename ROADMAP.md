@@ -1,5 +1,7 @@
 # PdfCraft roadmap
 
+> **2026-10-30 local print follow-up:** v0.15.0 Type 3 jobs use a restricted vector-font compatibility worker; Korean Windows factory paper is A4 with saved selections and read-only supported-media fallback preserved. Native/physical Windows output remains unqualified; see [verification notes](docs/v015-print-crash-a4.md). No estimates changed.
+
 **Stage: alpha** · next: beta, ~25% (ready for real work 50% → 75%) and ~400–700 h away
 
 > **Last reviewed:** 2026-10-27 | **Last updated:** 2026-10-27 | **Change:** minor (M10: OCR model downloads use verified ONNX pairs with legacy discovery fallback; estimates unchanged)
@@ -199,6 +201,8 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 | 8 | 1.0 polish: performance, right-to-left, missing languages, keyboard-only (M14) | 55–95 |
 
 ## Progress log
+
+- **2026-10-30 (M10, local v0.15.0 print follow-up):** Restricted Type 3 vector compatibility runs in an isolated worker; Korean Windows starts at A4 without a saved choice, with read-only supported-media fallback and saved paper retained. Physical Windows output remains unqualified; estimates unchanged.
 
 - **2026-10-27 (M10, OCR models):** Model staging downloads and verifies the ONNX pair after the upstream RTEN URL brownout; runtime discovery prefers complete ONNX pairs per directory, retains complete RTEN fallback and preserves directory precedence.
 - **2026-10-24 (M10, #4158 partial):** Word, HTML, RTF and PowerPoint export keep a block that continues another on its line (an italic case name, a link, a superscript) as a run in its own style inside that paragraph, with the source's word space, instead of a paragraph of its own. Style changes that wrap onto the next line still split paragraphs (the reading blocks keep style boundaries). Estimates unchanged.

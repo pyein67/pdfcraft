@@ -4555,7 +4555,12 @@ dependencies = [
  "pdfcraft-cos",
  "pdfcraft-model",
  "pdfcraft-render",
+ "roxmltree 0.21.2",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
+ "winprint",
 ]
 
 [[package]]

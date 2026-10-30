@@ -202,7 +202,8 @@ pub(crate) fn body(
                     ui.end_row();
                 }
                 let paper_label = ui.label(tl!("Paper:"));
-                let paper_name = PAPERS.get(d.paper).map_or("US Letter", |p| p.0);
+                let effective=d.effective_paper().ok();
+                let paper_name=effective.as_ref().map_or("Reading printer paper…",|p| p.name.as_str());
                 let before = d.paper;
                 craft_ui::ComboBox::from_id_salt("paper").selected_text(tl!(paper_name)).width(260.0).show_ui(ui, |ui| {
                     for (i, (name, _)) in PAPERS.iter().enumerate() {
@@ -219,6 +220,11 @@ pub(crate) fn body(
                 }
                 ui.end_row();
             });
+            if let Ok(paper) = d.effective_paper()
+                && PAPERS.get(d.paper).is_some_and(|(_, size)| *size != paper.size)
+            {
+                ui.label(egui::RichText::new(tl!("Selected paper is unavailable; using supported printer paper for this job. Your saved choice is kept.")).small().color(t.text_muted));
+            }
             // Windows says which drivers can't print two-sided as they're asked; they keep their
             // own setting, even when Two-sided is Off.
             if let Some(p) = d.printers.iter().find(|p| d.printer.as_ref() == Some(&p.name))
