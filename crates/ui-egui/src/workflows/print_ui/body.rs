@@ -203,7 +203,7 @@ pub(crate) fn body(
                 }
                 let paper_label = ui.label(tl!("Paper:"));
                 let effective=d.effective_paper().ok();
-                let paper_name=effective.as_ref().map_or("Reading printer paper…",|p| p.name.as_str());
+                let paper_name=effective.as_ref().map_or("Selected paper",|p| p.name.as_str());
                 let before = d.paper;
                 craft_ui::ComboBox::from_id_salt("paper").selected_text(tl!(paper_name)).width(260.0).show_ui(ui, |ui| {
                     for (i, (name, _)) in PAPERS.iter().enumerate() {
@@ -220,6 +220,9 @@ pub(crate) fn body(
                 }
                 ui.end_row();
             });
+            if let Some(message)=d.paper_query_message() {
+                ui.label(egui::RichText::new(tl!(message)).small().color(t.text_muted));
+            }
             if let Ok(paper) = d.effective_paper()
                 && PAPERS.get(d.paper).is_some_and(|(_, size)| *size != paper.size)
             {

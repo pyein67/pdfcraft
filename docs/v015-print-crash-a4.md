@@ -1,6 +1,8 @@
 # v0.15.0 Windows print compatibility and initial paper
 
-Status: local implementation; Windows crash isolation, native media discovery and physical output require Windows validation. No release build, push or PR.
+Historical b51 implementation note; advisory query recovery is described in [the follow-up](v015-paper-query-recovery.md).
+
+Status at b51: local implementation; Windows crash isolation, native media discovery and physical output require Windows validation. No release build, push or PR.
 
 Last reviewed / updated: 2026-10-30.
 

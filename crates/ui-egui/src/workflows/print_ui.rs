@@ -11,6 +11,8 @@ use crate::{PdfCraftApp, widgets};
 
 mod body;
 mod draft;
+#[cfg(not(target_arch = "wasm32"))]
+mod paper_query;
 
 pub(crate) use body::body;
 pub use draft::{Handling, PrintDraft, Which};
@@ -62,7 +64,7 @@ pub(crate) struct PrintTasks {
     #[cfg(not(target_arch = "wasm32"))]
     options: Vec<(String, std::sync::mpsc::Receiver<Vec<spool::PrinterOption>>)>,
     #[cfg(not(target_arch = "wasm32"))]
-    papers: Option<(String, std::sync::mpsc::Receiver<PaperResult>)>,
+    papers: paper_query::PaperReads,
     /// The browser print being drawn, a sheet a frame (`web_print`).
     #[cfg(target_arch = "wasm32")]
     web_job: Option<crate::web_print::WebPrintJob>,
@@ -170,7 +172,7 @@ impl PdfCraftApp {
         };
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.print_tasks.papers = None;
+            self.print_tasks.papers.reset();
         }
         self.print_draft = PrintDraft {
             paper_capabilities: None,
@@ -293,37 +295,33 @@ impl PdfCraftApp {
     /// Pick up a printer list, driver options or a spooled job that finished (each frame).
     #[cfg(not(target_arch = "wasm32"))]
     fn poll_paper(&mut self) {
-        if let Some((name, rx)) = &self.print_tasks.papers {
-            let result = match rx.try_recv() {
-                Ok(result) => Some(result),
-                Err(std::sync::mpsc::TryRecvError::Empty) => None,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err("Paper query stopped".into())),
-            };
-            if let Some(result) = result {
-                if self.print_draft.printer.as_deref() == Some(name.as_str()) {
-                    self.print_draft.paper_capabilities = Some((name.clone(), Some(result)));
-                }
-                self.print_tasks.papers = None;
-            }
+        self.poll_paper_at(std::time::Instant::now());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn poll_paper_at(&mut self, now: std::time::Instant) {
+        if let Some(result) = self.print_tasks.papers.poll(self.print_draft.printer.as_deref(), now)
+            && let Some(printer) = self.print_draft.printer.clone()
+        {
+            self.print_draft.paper_capabilities = Some((printer, Some(result)));
         }
         if self.dialog != Some(crate::Dialog::Print) {
             return;
         }
-        let Some(source) = self.paper_source.clone() else { return };
         let Some(printer) = self.print_draft.printer.clone() else {
+            self.print_tasks.papers.reset();
+            self.print_draft.paper_capabilities = None;
+            return;
+        };
+        let Some(source) = self.paper_source.clone() else {
             return;
         };
         if self.print_draft.paper_capabilities.as_ref().is_some_and(|(name, _)| *name == printer) {
             return;
         }
-        let (tx, rx) = std::sync::mpsc::channel();
         self.print_draft.paper_capabilities = Some((printer.clone(), None));
-        self.print_tasks.papers = Some((printer.clone(), rx));
-        let wake = WakeOnExit(self.ctx.clone());
-        std::thread::spawn(move || {
-            let _wake = wake;
-            let _ = tx.send(source(&printer));
-        });
+        if let Err(error) = self.print_tasks.papers.start(printer.clone(), source, self.ctx.clone(), now) {
+            self.print_draft.paper_capabilities = Some((printer, Some(Err(error))));
+        }
     }
     pub(crate) fn poll_print(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
@@ -688,6 +686,37 @@ pub(crate) fn preview_rasters(d: &PrintDraft, sizes: &[(f64, f64)], labels: &[St
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn deselecting_a_printer_clears_pending_cache_before_reselecting_it() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use std::time::{Duration, Instant};
+        let mut app = PdfCraftApp::new();
+        app.dialog = Some(crate::Dialog::Print);
+        app.print_draft.paper_capabilities = Some(("Office".into(), None));
+        app.print_draft.printer = None;
+        app.poll_paper();
+        assert!(app.print_draft.paper_capabilities.is_none());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        app.paper_source = Some(Arc::new(move |_| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Err("synthetic failure".into())
+        }));
+        app.print_draft.printer = Some("Office".into());
+        app.poll_paper();
+        let stop = Instant::now() + Duration::from_secs(5);
+        while matches!(&app.print_draft.paper_capabilities, Some((_, None))) && Instant::now() < stop {
+            app.poll_paper();
+            std::thread::yield_now();
+        }
+        assert!(matches!(&app.print_draft.paper_capabilities, Some((_, Some(Err(_))))));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(app.print_draft.settings(1, &[]).is_ok());
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
@@ -706,11 +735,11 @@ mod tests {
             Ok(print::paper::Capabilities { papers: vec![print::paper::Paper { name: name.into(), size: (300., 400.) }], default: Some(0) })
         }));
         app.poll_paper();
-        assert!(app.print_draft.settings(1, &[]).is_err());
+        assert!(app.print_draft.settings(1, &[]).is_ok());
         app.print_draft.printer = Some("Current".into());
         app.poll_paper();
         let stop = Instant::now() + Duration::from_secs(5);
-        while app.print_draft.effective_paper().is_err() && Instant::now() < stop {
+        while !matches!(&app.print_draft.paper_capabilities, Some((_, Some(Ok(_))))) && Instant::now() < stop {
             app.poll_paper();
             std::thread::yield_now();
         }

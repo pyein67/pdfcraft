@@ -158,12 +158,29 @@ impl PrintDraft {
             && self.printer.as_deref() == Some(printer.as_str())
         {
             return match result {
-                Some(Ok(caps)) => print::paper::resolve(&wanted, caps),
-                Some(Err(_)) => Err("Printer paper could not be read; reopen Print or select another printer.".into()),
-                None => Err("Reading printer paper…".into()),
+                Some(Ok(caps)) => Ok(print::paper::resolve(&wanted, caps).unwrap_or(wanted)),
+                Some(Err(_)) | None => Ok(wanted),
             };
         }
         Ok(wanted)
+    }
+
+    /// A failed/timed-out preflight is advisory, never evidence that a paper is supported.
+    pub fn paper_query_message(&self) -> Option<&'static str> {
+        let (printer, result) = self.paper_capabilities.as_ref()?;
+        if self.printer.as_deref() != Some(printer.as_str()) {
+            return None;
+        }
+        match result {
+            None => Some("Checking printer paper in the background. The selected paper will be validated before printing."),
+            Some(Err(_)) => Some("Printer paper information is unavailable. The selected paper will be validated when printing."),
+            Some(Ok(caps)) => {
+                let (name, size) = PAPERS.get(self.paper).copied().unwrap_or(PAPERS[0]);
+                print::paper::resolve(&print::paper::Paper { name: name.into(), size }, caps)
+                    .err()
+                    .map(|_| "Printer paper information is unavailable. The selected paper will be validated when printing.")
+            }
+        }
     }
 
     /// Choose Page Sizing & Handling. Label loads label stock and remembers the paper it

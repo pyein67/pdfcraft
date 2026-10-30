@@ -1,5 +1,7 @@
 # PdfCraft roadmap
 
+> **2026-10-30 local paper-query follow-up:** Keep A4/saved choices; make advisory discovery failures non-blocking, preserve valid media on optional default-probe failure, and add bounded UI deadlines and private-data-free stage/HRESULT logs. Native company-PC failure attribution remains pending. Estimates unchanged.
+
 > **2026-10-30 local print follow-up:** v0.15.0 Type 3 jobs use a restricted vector-font compatibility worker; Korean Windows factory paper is A4 with saved selections and read-only supported-media fallback preserved. Native/physical Windows output remains unqualified; see [verification notes](docs/v015-print-crash-a4.md). No estimates changed.
 
 **Stage: alpha** · next: beta, ~25% (ready for real work 50% → 75%) and ~400–700 h away
@@ -201,6 +203,8 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 | 8 | 1.0 polish: performance, right-to-left, missing languages, keyboard-only (M14) | 55–95 |
 
 ## Progress log
+
+- **2026-10-30 (M10, local paper recovery):** Paper preflight failures no longer disable Print; supported-media selection and backend ticket validation remain intact. Added query-stage/HRESULT diagnostics, a 10-second advisory deadline and bounded outstanding reads. No engine/Type 3 changes, push or Windows build.
 
 - **2026-10-30 (M10, local v0.15.0 print follow-up):** Restricted Type 3 vector compatibility runs in an isolated worker; Korean Windows starts at A4 without a saved choice, with read-only supported-media fallback and saved paper retained. Physical Windows output remains unqualified; estimates unchanged.
 

@@ -35,35 +35,76 @@ pub fn initial(windows: bool, locale: Option<&str>) -> usize {
     let korean = locale.and_then(|s| s.split(['-', '_', '.']).next()).is_some_and(|s| s.eq_ignore_ascii_case("ko"));
     if windows && korean { super::PAPERS.iter().position(|(n, _)| *n == "A4").unwrap_or(0) } else { 0 }
 }
-/// Uses the pinned safe native wrapper already used by craft-print. Query off the GUI thread.
+/// Read-only discovery. A default-ticket probe is optional; it cannot discard valid media.
+/// Diagnostics contain stage identifiers and HRESULTs, never queue names or driver/XML text.
 pub fn capabilities(printer: &str) -> Result<Capabilities, String> {
     #[cfg(windows)]
     {
-        use winprint::{
-            printer::PrinterDevice,
-            ticket::{FeatureOptionPack as _, PrintCapabilities, PrintTicket, PrintTicketBuilder},
-        };
-        let device = PrinterDevice::all().map_err(|e| e.to_string())?.into_iter().find(|d| d.name() == printer).ok_or("Printer unavailable")?;
-        let caps = PrintCapabilities::fetch(&device).map_err(|e| e.to_string())?;
-        let papers = caps
-            .page_media_sizes()
-            .take(1024)
-            .map(|m| Paper {
-                name: m.display_name().unwrap_or("Printer paper").to_string(),
-                size: (f64::from(m.size().width_in_micron()) * 72.0 / 25400.0, f64::from(m.size().height_in_micron()) * 72.0 / 25400.0),
-            })
-            .collect::<Vec<_>>();
-        let mut builder = PrintTicketBuilder::new(&device).map_err(|e| e.to_string())?;
-        builder.merge(PrintTicket::default()).map_err(|e| e.to_string())?;
-        let ticket = builder.build().map_err(|e| e.to_string())?;
-        let default = default_size(ticket.get_xml()).and_then(|s| papers.iter().position(|p| matches(p.size, s)));
-        Ok(Capabilities { papers, default })
+        let result = native::read(printer);
+        if let Err(error) = &result {
+            error.report(false);
+        }
+        result.map_err(|e| e.to_string())
     }
     #[cfg(not(windows))]
     {
         let _ = printer;
         Err("Native media discovery is Windows-only".into())
     }
+}
+#[cfg(windows)]
+mod native;
+#[cfg(any(windows, test))]
+#[derive(Clone, Debug, PartialEq)]
+struct ReadFailure {
+    phase: &'static str,
+    kind: &'static str,
+    hresult: Option<i32>,
+}
+#[cfg(any(windows, test))]
+impl std::fmt::Display for ReadFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "phase={} kind={}", self.phase, self.kind)?;
+        if let Some(hr) = self.hresult {
+            write!(f, " hresult=0x{:08X}", hr as u32)?;
+        }
+        Ok(())
+    }
+}
+#[cfg(any(windows, test))]
+impl ReadFailure {
+    fn report(&self, optional: bool) {
+        log::warn!("print.paper event=error {} optional={} thread={:?}", self, optional, std::thread::current().id());
+    }
+}
+#[cfg(any(windows, test))]
+fn read_catalog(
+    media: impl FnOnce() -> Result<Vec<Paper>, ReadFailure>,
+    default: impl FnOnce() -> Result<Option<(f64, f64)>, ReadFailure>,
+) -> Result<Capabilities, ReadFailure> {
+    let papers = media()?
+        .into_iter()
+        .filter(|p| p.size.0.is_finite() && p.size.1.is_finite() && p.size.0 > 0. && p.size.1 > 0. && p.size.0 <= 14400. && p.size.1 <= 14400.)
+        .take(1024)
+        .collect::<Vec<_>>();
+    if papers.is_empty() {
+        return Err(ReadFailure { phase: "media.list", kind: "no_valid_media", hresult: None });
+    }
+    let size = match default() {
+        Ok(size) => size,
+        Err(error) => {
+            error.report(true);
+            None
+        }
+    };
+    let default = size.and_then(|size| papers.iter().position(|p| matches(p.size, size)));
+    log::info!(
+        "print.paper event=complete media_count={} default_known={} thread={:?}",
+        papers.len(),
+        default.is_some(),
+        std::thread::current().id()
+    );
+    Ok(Capabilities { papers, default })
 }
 #[cfg(any(windows, test))]
 fn default_size(bytes: &[u8]) -> Option<(f64, f64)> {

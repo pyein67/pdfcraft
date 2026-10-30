@@ -4551,6 +4551,7 @@ name = "pdfcraft-print"
 version = "0.15.0"
 dependencies = [
  "craft-print",
+ "log",
  "pdfcraft-content",
  "pdfcraft-cos",
  "pdfcraft-model",
@@ -4560,6 +4561,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "windows-core",
  "winprint",
 ]
 

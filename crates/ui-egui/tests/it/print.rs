@@ -960,7 +960,7 @@ fn supported_paper_is_shared_by_preview_pdf_and_spool_job_without_overwriting_pr
 }
 
 #[test]
-fn saved_paper_wins_and_loading_or_failed_capabilities_never_forces_a4() {
+fn saved_paper_wins_and_unknown_capabilities_defer_to_backend_validation() {
     use pdfcraft_engine::print::{
         self, PAPERS,
         paper::{Capabilities, Paper},
@@ -979,8 +979,35 @@ fn saved_paper_wins_and_loading_or_failed_capabilities_never_forces_a4() {
     }
     let mut d = pdfcraft_ui_egui::PrintDraft { paper: a4, printer: Some("Office".into()), ..Default::default() };
     d.paper_capabilities = Some(("Office".into(), None));
-    assert!(d.settings(1, &[]).is_err());
+    assert_eq!(d.settings(1, &[]).unwrap().paper, PAPERS[a4].1);
+    assert!(d.paper_query_message().is_some());
     d.paper_capabilities = Some(("Office".into(), Some(Err("driver unavailable".into()))));
-    assert!(d.settings(1, &[]).is_err());
+    assert_eq!(d.settings(1, &[]).unwrap().paper, PAPERS[a4].1);
+    assert!(d.paper_query_message().is_some());
     assert_eq!(d.paper, a4);
+}
+
+#[test]
+fn a_failed_advisory_media_read_keeps_paper_preview_and_print_button_usable() {
+    let mut h = harness_with_settings(Some(r#"{"print_paper":"A4"}"#.into()));
+    h.state_mut().printer_source = Some(std::sync::Arc::new(|| {
+        vec![pdfcraft_engine::print::spool::Printer { name: "Office".into(), default: true, two_sided: None, description: String::new() }]
+    }));
+    h.state_mut().paper_source = Some(std::sync::Arc::new(|_| Err("private driver message must not be displayed".into())));
+    assert!(h.state_mut().execute("print.dialog"));
+    for _ in 0..20 {
+        h.run_steps(1);
+        if matches!(&h.state().print_draft.paper_capabilities, Some((_, Some(Err(_))))) {
+            break;
+        }
+        std::thread::yield_now();
+    }
+    h.run_steps(3);
+    assert!(matches!(&h.state().print_draft.paper_capabilities, Some((_, Some(Err(_))))));
+    h.get_by_value("A4");
+    h.get_by_label("Sheet 1 of 1");
+    assert!(!h.get_by_role_and_label(Role::Button, "Print").accesskit_node().is_disabled());
+    assert!(h.query_by_label_contains("private driver message").is_none());
+    assert_eq!(h.state().print_draft.size, pdfcraft_engine::print::SizeMode::Fit);
+    // Do not click Print: the original backend still validates the actual job's paper.
 }

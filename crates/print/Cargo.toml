@@ -14,8 +14,11 @@ pdfcraft-cos = { workspace = true }
 pdfcraft-content = { workspace = true }
 pdfcraft-model = { workspace = true }
 thiserror = { workspace = true }
+log = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
+# HRESULT downcasts for diagnostics only; same core version already used by winprint.
+windows-core = "=0.62.2"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tempfile = "3"

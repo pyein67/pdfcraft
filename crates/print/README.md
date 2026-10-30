@@ -42,8 +42,10 @@ including when Print is cancelled. The preference stores a canonical name such a
 unrecognized saved values retain the current selection. On a fresh Korean Windows app
 that selection is A4; elsewhere it remains US Letter. The Windows desktop reads supported
 media in the background: an unsupported selection uses valid printer media for the preview
-and job while keeping the remembered selection for other printers. Pending or unreadable
-media discovery stops submission. This does not write printer defaults or change Fit/Actual.
+and job while keeping the remembered selection for other printers. Discovery is advisory:
+pending/failed reads keep the selected paper and show an unverified-paper notice; the existing
+native backend still validates the actual job. A 10-second UI deadline and two-read cap bound
+pending state and outstanding calls. This does not write printer defaults or change Fit/Actual.
 Headless `doc_print` defaults are unchanged.
 
 `spool` delegates discovery, driver options, preferences and submission to

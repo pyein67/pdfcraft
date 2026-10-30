@@ -36,3 +36,28 @@ fn default_ticket_dimensions_are_namespace_aware() {
     assert!((size.1 - 841.88976).abs() < 0.0001);
     assert!(default_size(b"not xml").is_none());
 }
+
+#[test]
+fn failed_default_probe_does_not_discard_a_valid_media_catalog() {
+    let a4 = paper("A4", (595.28, 841.89));
+    let caps =
+        read_catalog(|| Ok(vec![a4.clone()]), || Err(ReadFailure { phase: "defaults.merge", kind: "win32", hresult: Some(0x80070057u32 as i32) }))
+            .unwrap();
+    assert_eq!(caps.default, None);
+    assert_eq!(resolve(&a4, &caps).unwrap(), a4);
+    assert_eq!(resolve(&paper("Label", (200., 300.)), &caps).unwrap(), a4);
+}
+#[test]
+fn media_failure_preserves_the_stage_and_hresult_and_skips_default_probe() {
+    let error = ReadFailure { phase: "capabilities.get", kind: "win32", hresult: Some(0x800401f0u32 as i32) };
+    let result = read_catalog(|| Err(error.clone()), || panic!("default probe must not run"));
+    assert_eq!(result.unwrap_err(), error);
+    assert_eq!(error.to_string(), "phase=capabilities.get kind=win32 hresult=0x800401F0");
+    // Diagnostic codes carry no arbitrary driver error message or XML.
+    assert!(!error.to_string().contains("<"));
+}
+#[test]
+fn empty_or_invalid_media_is_unknown_instead_of_a_claimed_supported_a4() {
+    let result = read_catalog(|| Ok(vec![paper("invalid", (0., f64::NAN))]), || panic!("no valid media"));
+    assert_eq!(result.unwrap_err().phase, "media.list");
+}
