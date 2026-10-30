@@ -470,3 +470,5 @@ Newest first: the date, what moved, and the new overall estimate.
 - 2026-10-29 — M10 v2 follow-up: explicit font/vector AA controls and third-renderer comparison, binary QR/predictor audit; tentative 100% recollection recorded, native printer details remain unknown. No runtime print changes.
 
 2026-10-29: Implemented default-off actual-job Windows print diagnostics on feat/windows-print-job-diagnostics. Patched craft-print/winprint are wired by Cargo source patches; observe validated ticket, normalized public DEVMODE, actual D2D rasterDPI, compatibility route and serialized placement. No rendering/settings change; Windows provider execution remains pending.
+
+2026-10-30: Implemented default-off Samsung DarkenText Minimum/Off job-only A/B experiment. Enforce A4/Actual/600 DPI/BW/FineEdge Normal, reject changed/reverted/unknown tickets and normalization drift before native submission, preserve normal print policy, and add metadata-only launch/comparison tools. Windows/company-printer acceptance remains pending.

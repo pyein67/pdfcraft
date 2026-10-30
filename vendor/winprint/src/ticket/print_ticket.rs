@@ -14,8 +14,8 @@ use windows::{
             Printing::{
                 ClosePrinter, DocumentPropertiesW, OpenPrinterW,
                 PrintTicket::{
-                    kPTJobScope, kUserDefaultDevmode, PTCloseProvider,
-                    PTConvertPrintTicketToDevMode, PTOpenProvider, PTReleaseMemory,
+                    kPTJobScope, kUserDefaultDevmode, PTCloseProvider, PTConvertDevModeToPrintTicket, PTConvertPrintTicketToDevMode, PTOpenProvider,
+                    PTReleaseMemory,
                 },
                 PRINTER_HANDLE,
             },
@@ -32,9 +32,7 @@ pub struct PrintTicket {
 
 impl Default for PrintTicket {
     fn default() -> Self {
-        Self {
-            xml: DEFAULT_PRINT_TICKET_XML.into(),
-        }
+        Self { xml: DEFAULT_PRINT_TICKET_XML.into() }
     }
 }
 
@@ -58,6 +56,9 @@ pub enum ToDevModeError {
     /// [`DocumentProperties`]: https://learn.microsoft.com/en-us/windows/win32/printdocs/documentproperties
     #[error("Failed to correct dev mode via DocumentProperties")]
     FailedToCorrectDevMode,
+    /// Opt-in experiment could not establish a safe, auditable single-variable job.
+    #[error("{0}")]
+    AbValidation(String),
 }
 
 impl PrintTicket {
@@ -74,6 +75,41 @@ impl PrintTicket {
     /// Get the XML of the print ticket.
     pub fn get_xml(&self) -> &[u8] {
         &self.xml
+    }
+
+    /// A/B-only read-only normalization round trip. Never writes queue defaults or starts a job.
+    pub fn normalized_for_ab(&self, device: &PrinterDevice) -> Result<(Vec<u8>, PrintTicket), ToDevModeError> {
+        let buffer = self.to_dev_mode(device)?;
+        if craft_print_diagnostics::devmode(&buffer).is_none() {
+            return Err(ToDevModeError::AbValidation("A/B invalid normalized DEVMODE; nothing sent".into()));
+        }
+        // Native provider calls stay inside this existing FFI wrapper crate. The owned Unicode
+        // DEVMODE came from DocumentPropertiesW; cb bounds the header plus private driver data.
+        unsafe {
+            let provider = PTOpenProvider(PCWSTR(wchar::to_wide_chars(device.os_name()).as_ptr()), 1).map_err(ToDevModeError::OpenProviderFailed)?;
+            defer! { let _ = PTCloseProvider(provider); }
+            let stream = SHCreateMemStream(None).ok_or(ToDevModeError::StreamNotAllocated)?;
+            let size = buffer
+                .get(68..70)
+                .and_then(|s| s.try_into().ok())
+                .map(u16::from_le_bytes)
+                .zip(buffer.get(70..72).and_then(|s| s.try_into().ok()).map(u16::from_le_bytes))
+                .map(|(size, extra)| u32::from(size) + u32::from(extra))
+                .ok_or_else(|| ToDevModeError::AbValidation("A/B DEVMODE header unavailable; nothing sent".into()))?;
+            PTConvertDevModeToPrintTicket(provider, size, buffer.as_ptr().cast(), kPTJobScope, &stream)
+                .map_err(|_| ToDevModeError::AbValidation("A/B DEVMODE-to-ticket conversion unavailable; nothing sent".into()))?;
+            let mut length = 0;
+            stream
+                .Seek(0, windows::Win32::System::Com::STREAM_SEEK_END, Some(&mut length))
+                .map_err(|_| ToDevModeError::AbValidation("A/B normalized ticket unavailable; nothing sent".into()))?;
+            if length > 4 * 1024 * 1024 {
+                return Err(ToDevModeError::AbValidation("A/B normalized ticket too large; nothing sent".into()));
+            }
+            // Owned in-memory stream, no external writer; its checked size cannot grow here.
+            let xml = crate::utils::stream::read_com_stream(&stream)
+                .map_err(|_| ToDevModeError::AbValidation("A/B normalized ticket read failed; nothing sent".into()))?;
+            Ok((buffer, PrintTicket::from_xml(xml)))
+        }
     }
 
     /// Convert the print ticket to [`DEVMODE`] data.

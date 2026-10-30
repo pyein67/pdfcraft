@@ -212,3 +212,5 @@ M2 (renderer), M7 (content editing), M10 (OCR and Office), M11 (Preflight and st
 | 2026-10-10 | major | Created from ROADMAP.md §Milestones, §Critical path, §Risks and §Where we're lacking. Merged the duplicated M1, M2, M3 and M14 rows, re-measured Done and Remaining, added Current focus and the ranked upcoming milestones |
 
 2026-10-29 (M10): Actual-job observations implemented, default off: linked vendored spooler/native dependencies, cross-thread/worker IDs, ticket/DPI/scale/route/placement metadata and byte-preservation regressions. No quality-fix claim or Windows output validation yet; estimates unchanged.
+
+2026-10-30 (M10): Samsung DarkenText A/B implementation and regression checks complete: capability-derived single-feature request, read-only normalized baseline probe, actual normalized DEVMODE-to-ticket validation, unchanged rasterDPI guard, privacy-safe metadata and one-job log comparison. No physical-quality claim, queue/default write, GitHub push or Windows build; estimates unchanged.

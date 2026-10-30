@@ -342,6 +342,10 @@ mod tests {
 
 /// Observe the exact validated ticket handed to WinPdfPrinter. Never merges or edits it.
 pub(crate) fn trace_final(xml: &[u8]) {
+    if craft_print_diagnostics::ab::mode().is_some() {
+        craft_print_diagnostics::ab::observe_validated_ticket(xml);
+        return;
+    }
     if !craft_print_diagnostics::enabled() {
         return;
     }

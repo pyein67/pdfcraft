@@ -106,7 +106,36 @@ fn driver_ticket(device: &PrinterDevice, job: &Job, sheet: (f64, f64), landscape
     let validated = builder.build().map_err(spool_error)?;
     let xml = std::str::from_utf8(validated.get_xml()).map_err(spool_error)?;
     let paper = ticket::verify_ticket(xml, wanted, landscape)?;
-    Ok((validated, paper))
+    let Some(mode) = craft_print_diagnostics::ab::mode() else { return Ok((validated, paper)) };
+    if !job.grayscale || job.scaling != Scaling::Exact {
+        return Err(spool_error("A/B requires black/white and Exact backend scaling; nothing sent"));
+    }
+    let caps = PrintCapabilities::fetch_xml_for_ticket(device, Some(&validated)).map_err(spool_error)?;
+    let caps = std::str::from_utf8(&caps).map_err(spool_error)?;
+    let requested = craft_print_diagnostics::ab::request(xml, caps, mode).map_err(spool_error)?;
+    let candidate = if mode == craft_print_diagnostics::ab::Mode::Minimum {
+        validated.clone()
+    } else {
+        let mut builder = PrintTicketBuilder::new(device).map_err(spool_error)?;
+        builder.merge(PrintTicket::from_xml(requested.as_bytes())).map_err(|_| {
+            craft_print_diagnostics::record("ab.rejected", format_args!("requested={} phase=driver_merge status=REJECTED_NOT_PRINTED", mode.name()));
+            spool_error("A/B driver rejected the requested ticket; nothing sent")
+        })?;
+        builder.build().map_err(spool_error)?
+    };
+    let returned = std::str::from_utf8(candidate.get_xml()).map_err(spool_error)?;
+    craft_print_diagnostics::ab::verify_candidate(xml, &requested, returned, mode).map_err(spool_error)?;
+    // Probe a copy of the unchanged Minimum ticket. No queue write or job target creation.
+    let (baseline_dm, baseline_ticket) = validated.normalized_for_ab(device).map_err(|_| {
+        craft_print_diagnostics::record(
+            "ab.rejected",
+            format_args!("requested={} phase=baseline_normalization status=UNKNOWN_NOT_PRINTED", mode.name()),
+        );
+        spool_error("A/B baseline normalization unavailable; nothing sent")
+    })?;
+    craft_print_diagnostics::ab::remember_baseline(xml, std::str::from_utf8(baseline_ticket.get_xml()).map_err(spool_error)?, &baseline_dm)
+        .map_err(spool_error)?;
+    Ok((candidate, paper))
 }
 
 /// The widest unprintable margin of the ticket's paper, in points; 0 when the driver doesn't say.

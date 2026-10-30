@@ -368,3 +368,22 @@ fn compatibility_diagnostics_preserve_type1c_and_original_bytes() {
         assert!(trace.contains(if baseline.1.contains("Type 1C") { "type1c_conversion=true" } else { "type1c_conversion=false" }));
     }
 }
+
+#[test]
+fn ab_keeps_type1c_bytes_and_refuses_image_fallback_without_changing_normal_mode() {
+    let source = outline_fixture(false);
+    let baseline = compatibility_pdf(source.clone(), false).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let context = craft_print_diagnostics::Context::from_setting(Some(dir.path().join("ab.txt").into_os_string()), &source)
+        .unwrap()
+        .with_ab(craft_print_diagnostics::ab::Mode::Off);
+    craft_print_diagnostics::with_context(Some(context), || {
+        assert_eq!(compatibility_pdf(source.clone(), false).unwrap(), baseline);
+        assert!(compatibility_pdf(source, true).unwrap_err().contains("explicit image"));
+        assert!(compatibility_pdf(Arc::new(pdf(true, false)), false).unwrap_err().contains("image fallback not used"));
+        let ordinary = Arc::new(pdf(false, false));
+        assert_eq!(compatibility_pdf(ordinary.clone(), false).unwrap().0, *ordinary);
+    });
+    // The existing crash-safe fallback remains available when the experiment is disabled.
+    assert!(compatibility_pdf(Arc::new(pdf(true, false)), false).unwrap().1.contains("fallback"));
+}

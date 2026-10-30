@@ -7,5 +7,8 @@ license.workspace = true
 [lints]
 workspace = true
 
+[dependencies]
+roxmltree = "0.20"
+
 [dev-dependencies]
 tempfile = "3"

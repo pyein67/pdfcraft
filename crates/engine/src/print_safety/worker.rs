@@ -169,6 +169,9 @@ pub(super) fn entry() -> Option<ExitCode> {
         let force_image = ticket.force_image;
         let diagnostics_job = ticket.diagnostics_job.clone();
         let job = ticket.job()?;
+        if craft_print_diagnostics::ab::configured()?.is_some() && (force_image || !job.grayscale || job.scaling != Scaling::Exact) {
+            return Err("A/B worker requires vector printing, black/white and Exact scaling; nothing sent".into());
+        }
         let input = read_limited(&directory.join("input.pdf"), super::MAX_BYTES)?;
         let context = craft_print_diagnostics::Context::for_pdf(&input).map(|context| match diagnostics_job.as_deref() {
             Some(id) => context.inherit_job(id),

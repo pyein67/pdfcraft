@@ -636,9 +636,24 @@ fn page_form(doc: &mut Document, index: usize, content: Content) -> Result<ObjRe
     Ok(doc.add(Object::Stream(Stream::flate(d, &body))))
 }
 
-/// Build the print-ready PDF for `settings`. Encryption is not carried over (the file goes to a
-/// printer or is the user's own copy); callers must check the print permission first.
+/// Guard the experiment without changing the caller's paper or scale.
+fn ab_layout(settings: &Settings) -> Result<(), PrintError> {
+    if settings.layout != Layout::Size(SizeMode::Actual)
+        || !settings.paper.0.is_finite()
+        || !settings.paper.1.is_finite()
+        || (settings.paper.0 - 595.28).abs() > 0.02
+        || (settings.paper.1 - 841.89).abs() > 0.02
+    {
+        return Err(PrintError::Invalid("A/B requires A4 and Actual 100%; settings were not changed".into()));
+    }
+    Ok(())
+}
+
+/// Build the print-ready PDF; callers must check print permission first.
 pub fn impose(src: &Document, settings: &Settings) -> Result<Vec<u8>, PrintError> {
+    if craft_print_diagnostics::ab::configured().map_err(PrintError::Invalid)?.is_some() {
+        ab_layout(settings)?;
+    }
     let pages = pdfcraft_model::pages(src);
     let sizes: Vec<(f64, f64)> = pages.iter().map(|p| p.display_size(src)).collect();
     let sheets = layout(&sizes, settings)?;

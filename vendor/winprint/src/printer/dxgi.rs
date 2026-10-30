@@ -96,7 +96,28 @@ impl DxgiPrintContext {
         // Initialize COM before calling any COM functions.
         let _com_initializer = ComInitializer::new();
         unsafe {
-            let dev_mode = options.to_dev_mode(device).map_err(DxgiPrintContextError::PrintTicketError)?;
+            let dev_mode = if let Some(mode) = craft_print_diagnostics::ab::mode() {
+                let (buffer, normalized) = options.normalized_for_ab(device).map_err(|_| {
+                    craft_print_diagnostics::record(
+                        "ab.normalized",
+                        format_args!("requested={} confirmed_ticket=false status=UNKNOWN_NOT_PRINTED physical_effect=UNVERIFIED", mode.name()),
+                    );
+                    DxgiPrintContextError::PrintTicketError(ToDevModeError::AbValidation(
+                        "A/B normalized ticket/DEVMODE unavailable; nothing sent".into(),
+                    ))
+                })?;
+                let requested = std::str::from_utf8(options.get_xml()).map_err(|_| {
+                    DxgiPrintContextError::PrintTicketError(ToDevModeError::AbValidation("A/B request encoding invalid; nothing sent".into()))
+                })?;
+                let normalized = std::str::from_utf8(normalized.get_xml()).map_err(|_| {
+                    DxgiPrintContextError::PrintTicketError(ToDevModeError::AbValidation("A/B normalized encoding invalid; nothing sent".into()))
+                })?;
+                craft_print_diagnostics::ab::verify_normalized(requested, normalized, &buffer, mode)
+                    .map_err(|e| DxgiPrintContextError::PrintTicketError(ToDevModeError::AbValidation(e)))?;
+                buffer
+            } else {
+                options.to_dev_mode(device).map_err(DxgiPrintContextError::PrintTicketError)?
+            };
             if craft_print_diagnostics::enabled() {
                 craft_print_diagnostics::record(
                     "native.devmode",
@@ -119,6 +140,10 @@ impl DxgiPrintContext {
                     (None, None) => DEFAULT_DPI,
                 }
             };
+            if craft_print_diagnostics::ab::mode().is_some() {
+                craft_print_diagnostics::ab::verify_raster_dpi(raster_dpi as f32)
+                    .map_err(|e| DxgiPrintContextError::PrintTicketError(ToDevModeError::AbValidation(e)))?;
+            }
             let mut d3d_device: Option<ID3D11Device> = None;
             let mut d3d_context: Option<ID3D11DeviceContext> = None;
             D3D11CreateDevice(

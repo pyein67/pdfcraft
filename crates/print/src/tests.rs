@@ -669,3 +669,19 @@ fn diagnostics_observe_actual_and_fit_without_changing_pdf_bytes() {
         assert!(trace.contains(if mode == SizeMode::Actual { "serialized_scale_x=Some(1.0)" } else { "serialized_scale_x=Some(0.94)" }));
     }
 }
+
+#[test]
+fn ab_layout_accepts_actual_a4_without_mutating_and_refuses_fit_or_other_paper() {
+    let mut settings = Settings { pages: vec![0], paper: (595.28, 841.89), layout: Layout::Size(SizeMode::Actual), ..Settings::default() };
+    ab_layout(&settings).unwrap();
+    for mode in [SizeMode::Fit, SizeMode::Shrink, SizeMode::Custom(100.0)] {
+        settings.layout = Layout::Size(mode);
+        assert!(ab_layout(&settings).is_err());
+        assert_eq!(settings.layout, Layout::Size(mode));
+    }
+    settings.layout = Layout::Size(SizeMode::Actual);
+    for paper in [(612.0, 792.0), (f64::NAN, 841.89), (595.28, f64::INFINITY)] {
+        settings.paper = paper;
+        assert!(ab_layout(&settings).is_err());
+    }
+}

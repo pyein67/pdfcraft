@@ -66,6 +66,15 @@ The existing default-features=false remains in effect (no PDFium). Trailing whit
 in upstream XML test literals was removed without changing XML values. Observations
 are at the existing post-DocumentPropertiesW buffer, actual CreatePrintControl
 arguments and AddPage call. No rendering, ticket options or DPI formula changes.
-Both packages use the std-only craft-print-diagnostics crate for a bounded,
+Both packages use the shared craft-print-diagnostics crate for a bounded,
 explicitly enabled file sink. Diagnostic failures are ignored; driver private
 DEVMODE data and PDF contents are never logged.
+
+The Samsung A/B extension additionally requests only the advertised job-local
+DocumentDarkenText option and validates all other ticket settings against a
+Minimum baseline. `winprint::PrintTicket::normalized_for_ab` provides a bounded
+DEVMODE-to-ticket round trip through the existing native wrapper; the experiment
+compares the public DEVMODE and normalized tickets before starting the print target.
+It is opt-in and never updates a queue/default. Ordinary jobs keep the original
+normalization and rasterDPI calculation. Provider round-trip acceptance is still
+pending Windows tests; a missing feature or normalization drift refuses the test.

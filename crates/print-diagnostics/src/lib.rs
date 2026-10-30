@@ -1,5 +1,7 @@
 //! Opt-in, best-effort observations of existing print values. Never configures a printer.
 //! Set PDFCRAFT_PRINT_DIAGNOSTICS to an absolute output file path before starting PdfCraft.
+pub mod ab;
+
 use std::{
     cell::RefCell,
     ffi::OsString,
@@ -27,11 +29,16 @@ pub struct Context {
     input: u64,
     job: String,
     events: Arc<AtomicUsize>,
+    ab_mode: Option<ab::Mode>,
+    ab_state: Arc<ab::State>,
 }
 impl Context {
     /// Read-only opt-in. Missing, empty or relative settings disable all diagnostics.
     pub fn for_pdf(bytes: &[u8]) -> Option<Self> {
-        Self::from_setting(std::env::var_os("PDFCRAFT_PRINT_DIAGNOSTICS"), bytes)
+        Self::from_setting(std::env::var_os("PDFCRAFT_PRINT_DIAGNOSTICS"), bytes).map(|mut c| {
+            c.ab_mode = ab::configured().ok().flatten();
+            c
+        })
     }
     /// Same parsing as the environment entry, also usable without mutating process state.
     pub fn from_setting(setting: Option<OsString>, bytes: &[u8]) -> Option<Self> {
@@ -43,7 +50,13 @@ impl Context {
         let input = bytes.iter().fold(0xcbf29ce484222325_u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100000001b3));
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
         let job = format!("{}-{nanos}-{}", std::process::id(), NEXT_JOB.fetch_add(1, Ordering::Relaxed));
-        Some(Self { path, input, job, events: Arc::new(AtomicUsize::new(0)) })
+        Some(Self { path, input, job, events: Arc::new(AtomicUsize::new(0)), ab_mode: None, ab_state: Arc::new(ab::State::default()) })
+    }
+    /// Explicit per-context experiment opt-in for headless callers and regression tests.
+    /// A valid absolute sink is already required to construct this context.
+    pub fn with_ab(mut self, mode: ab::Mode) -> Self {
+        self.ab_mode = Some(mode);
+        self
     }
     /// Transfer the parent job ID through the existing isolated worker protocol.
     pub fn job_id(&self) -> &str {
@@ -91,16 +104,20 @@ impl fmt::Write for Line {
 }
 /// Append bounded metadata. Failures, missing directories and full files never fail printing.
 pub fn record(stage: &'static str, values: fmt::Arguments<'_>) {
-    let Some(context) = capture() else { return };
+    let _ = record_required(stage, values);
+}
+/// A/B experiments refuse to print when their required audit record cannot be written.
+pub fn record_required(stage: &'static str, values: fmt::Arguments<'_>) -> Result<(), &'static str> {
+    let Some(context) = capture() else { return Err("disabled") };
     if context.events.fetch_add(1, Ordering::Relaxed) >= MAX_EVENTS {
-        return;
+        return Err("event limit");
     }
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     let mut line = Line(String::new());
     let _ = write!(line, "unix_ms={} pid={} input={:016x} job={} stage={} ", now.as_millis(), std::process::id(), context.input, context.job, stage);
     let _ = line.write_fmt(values);
     line.0.push('\n');
-    let Ok(_lock) = FILE_LOCK.lock() else { return };
+    let Ok(_lock) = FILE_LOCK.lock() else { return Err("log lock") };
     let mut options = std::fs::OpenOptions::new();
     options.create(true).append(true);
     #[cfg(unix)]
@@ -111,8 +128,9 @@ pub fn record(stage: &'static str, values: fmt::Arguments<'_>) {
     if let Ok(mut file) = options.open(&context.path)
         && file.metadata().is_ok_and(|m| m.len().saturating_add(line.0.len() as u64) <= MAX_FILE)
     {
-        let _ = file.write_all(line.0.as_bytes());
+        return file.write_all(line.0.as_bytes()).map_err(|_| "log write");
     }
+    Err("log unavailable or full")
 }
 
 /// Public DEVMODEW fields, interpreted only when their dmFields flags are present.
@@ -232,3 +250,6 @@ mod correlation_tests {
         assert_eq!(b.clone().inherit_job(&"1".repeat(97)).job_id(), b.job_id());
     }
 }
+
+#[cfg(test)]
+mod ab_tests;

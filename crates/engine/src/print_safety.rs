@@ -13,6 +13,9 @@ mod outlines;
 /// Force-image remains available if a printer cannot consume the restricted outline result.
 pub fn compatibility_pdf(pdf: Arc<Vec<u8>>, force_image: bool) -> Result<(Vec<u8>, String), String> {
     crate::guard(|| {
+        if force_image && craft_print_diagnostics::ab::mode().is_some() {
+            return Err("A/B requires vector printing; explicit image path refused; nothing sent".into());
+        }
         if pdf.len() > MAX_BYTES {
             return Err("Compatibility input byte limit".into());
         }
@@ -30,6 +33,10 @@ pub fn compatibility_pdf(pdf: Arc<Vec<u8>>, force_image: bool) -> Result<(Vec<u8
                     return Ok((bytes, "Type 3 outlines to embedded Type 1C; original sheet geometry and other content retained".into()));
                 }
                 Err(reason) => {
+                    if craft_print_diagnostics::ab::mode().is_some() {
+                        craft_print_diagnostics::record("ab.rejected", format_args!("reason=type1c_conversion_failed image_fallback_not_used=true"));
+                        return Err("A/B Type 1C conversion failed; image fallback not used; nothing sent".into());
+                    }
                     let bytes = image_pdf(pdf)?;
                     craft_print_diagnostics::record(
                         "print.compatibility",
@@ -240,8 +247,20 @@ fn image_pdf_inner(pdf: Arc<Vec<u8>>) -> Result<Vec<u8>, String> {
 /// run in the same application's opt-in worker process, so a driver access violation cannot
 /// close the editor. Never retry a failed submission: sheets might already have been printed.
 pub fn submit(pdf: Vec<u8>, job: &crate::print::spool::Job, force_image: bool) -> Result<String, String> {
+    if craft_print_diagnostics::ab::configured()?.is_some() {
+        if !cfg!(windows) {
+            return Err("Samsung A/B testing requires Windows; nothing sent".into());
+        }
+        if force_image || !job.grayscale {
+            return Err("A/B requires vector printing and black/white; settings were not changed; nothing sent".into());
+        }
+    }
     let context = craft_print_diagnostics::Context::for_pdf(&pdf);
     craft_print_diagnostics::with_context(context, || {
+        if let Some(mode) = craft_print_diagnostics::ab::mode() {
+            craft_print_diagnostics::record_required("ab.request", format_args!("requested={} queue_defaults_changed=false", mode.name()))
+                .map_err(|_| "A/B diagnostic log unavailable; nothing sent".to_owned())?;
+        }
         let result = submit_observed(pdf, job, force_image);
         craft_print_diagnostics::record("print.end", format_args!("success={}", result.is_ok()));
         result
