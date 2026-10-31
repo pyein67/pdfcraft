@@ -305,3 +305,15 @@ fn primary_ui_fonts_cover_latin_and_cyrillic_catalogs() {
         }
     }
 }
+
+#[test]
+fn korean_glyphs_exist_in_every_input_font_family() {
+    if pdfcraft_fonts::CRAFT_FONTS.iter().all(|f| !f.covers("Hang")) {
+        assert!(std::env::var_os("PDFCRAFT_KOREAN_REQUIRED").is_none(), "Korean font is required");
+        return;
+    }
+    let mut fonts = Fonts::new(TextOptions::default(), theme::font_definitions());
+    for id in families() {
+        assert!(fonts.has_glyphs(&id, "한글 입력 붙여넣기 ㄱㄴ ABC 123"), "{id:?} lacks Korean glyphs");
+    }
+}

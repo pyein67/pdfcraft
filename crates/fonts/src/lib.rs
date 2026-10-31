@@ -11,6 +11,7 @@ mod craft;
 pub mod embedding;
 mod encodings;
 pub mod fallback;
+pub mod korean;
 pub mod pdf;
 mod script;
 mod shaping;

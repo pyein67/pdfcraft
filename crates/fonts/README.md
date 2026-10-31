@@ -78,3 +78,14 @@ Document font inputs use `embedding`: bounded static TrueType/OpenType-CFF valid
 exact program preservation, Unicode/CID/GID mapping and full-face subset completion.
 `shaping` uses the same program with harfrust and UAX #9; source UI fallback fonts are
 never exported. See [existing-text editing](../../docs/editing-existing-text.md).
+
+
+Korean builds add Nanum Gothic Regular to the external craft-fonts input with
+`cargo xtask korean-fonts <external directory>` (font and OFL SHA-256 verified).
+Set `CRAFT_FONTS_DIR` and `PDFCRAFT_KOREAN_REQUIRED=1` to require it. The `korean`
+module supplies UI fallbacks, modern Hangul composition, canonical search keys and
+full TrueType embedding through the existing `embedding` writer. No font file is
+committed here. Korean Text box and Add Text appearances use exact font advances,
+Identity-H, CIDToGIDMap and ToUnicode; reopening needs no installed Korean font.
+The current Korean fallback is Regular (no synthetic bold/italic).
+See [Windows build and validation](../../docs/korean-windows.md).
