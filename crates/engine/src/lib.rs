@@ -3959,6 +3959,20 @@ impl Session {
         .map_err(EditError::Write)
     }
 
+    /// Original-structure snapshot for an external print dialog, including unsaved edits.
+    /// Does not mark the document saved, impose sheets, convert fonts or rasterize pages.
+    pub fn external_print_pdf(&self, id: DocId) -> Result<Arc<Vec<u8>>, EditError> {
+        let doc = self.get(id).ok_or(EditError::NoDocument)?;
+        if !doc.allows_printing() {
+            return Err(EditError::NotPermitted("printing"));
+        }
+        let bytes = self.save_bytes(id)?;
+        if !bytes.iter().take(1024).copied().collect::<Vec<_>>().windows(5).any(|v| v == b"%PDF-") {
+            return Err(EditError::Print("External printing requires a PDF document.".into()));
+        }
+        Ok(bytes)
+    }
+
     /// The print-ready PDF for `settings` (sheets laid out for the paper; see `pdfcraft-print`).
     pub fn print_pdf(&self, id: DocId, settings: &print::Settings) -> Result<Vec<u8>, EditError> {
         let doc = self.get(id).ok_or(EditError::NoDocument)?;

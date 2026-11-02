@@ -441,3 +441,40 @@ fn image_print_choice_survives_reopening_the_windows_dialog() {
     h.run_steps(2);
     assert!(h.state().print_draft.print_as_image);
 }
+
+#[test]
+fn paper_query_failure_keeps_a4_preview_and_print_enabled() {
+    let mut h = harness();
+    assert!(h.state_mut().execute("print.dialog"));
+    {
+        let d = &mut h.state_mut().print_draft;
+        d.printer = Some("Synthetic printer".into());
+        d.printer_picked = true;
+        d.paper = 4;
+        d.paper_capabilities = Some(("Synthetic printer".into(), Some(Err("synthetic read error".into()))));
+    }
+    h.run_steps(3);
+    h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("A4"));
+    h.get_by_label("Sheet 1 of 1");
+    if let Some(dir) = std::env::var_os("PDFCRAFT_PRINT_SHOTS") {
+        h.render().unwrap().save(std::path::PathBuf::from(dir).join("native-a4.png")).unwrap();
+    }
+    assert!(h.query_by(|n| n.label().as_deref() == Some("Print") && !n.is_disabled()).is_some());
+    assert_eq!(h.state().print_draft.settings(1, &["1".into()]).unwrap().paper, pdfcraft_engine::print::PAPERS[4].1);
+}
+
+#[test]
+fn external_print_dialog_requires_explicit_executable_and_explains_own_settings() {
+    let mut h = harness();
+    assert!(h.state_mut().execute("print.dialog"));
+    h.state_mut().print_draft.method = pdfcraft_ui_egui::PrintMethod::Sumatra;
+    h.run_steps(3);
+    if let Some(dir) = std::env::var_os("PDFCRAFT_PRINT_SHOTS") {
+        h.render().unwrap().save(std::path::PathBuf::from(dir).join("external.png")).unwrap();
+    }
+    h.get_by_label("SumatraPDF 인쇄 창 열기").click();
+    h.run_steps(3);
+    assert_eq!(h.state().dialog, Some(Dialog::Print));
+    assert!(h.state().toast.as_ref().unwrap().0.contains("SumatraPDF.exe"));
+    h.get_by_label("SumatraPDF.exe:");
+}

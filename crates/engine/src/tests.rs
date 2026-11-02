@@ -1825,6 +1825,7 @@ fn printing_lays_out_sheets_that_render() {
     let mut s4 = Session::new();
     let id4 = s4.open("locked.pdf", None, saved, Some("pw")).unwrap();
     assert_eq!(s4.print_pdf(id4, &print::Settings { pages: vec![0], ..Default::default() }), Err(EditError::NotPermitted("printing")));
+    assert_eq!(s4.external_print_pdf(id4), Err(EditError::NotPermitted("printing")));
 }
 
 #[test]
@@ -4522,4 +4523,19 @@ fn copy_image_finds_a_picture_inside_form_artwork_under_text() {
     // The largest picture in the group, as the JPEG stored in the PDF.
     assert_eq!(d.page_image_copy_file(0, 0).unwrap(), ("jpg", jpeg));
     assert!(d.page_image_copy_file(0, 1).is_err());
+}
+
+#[test]
+fn external_print_snapshot_preserves_bytes_and_unsaved_edit_without_mark_saved() {
+    let (mut s, id) = session_with(1);
+    let original = s.save_bytes(id).unwrap();
+    assert_eq!(s.external_print_pdf(id).unwrap(), original);
+    s.apply(id, Edit::RotatePages { pages: vec![0], degrees: 90 }).unwrap();
+    let bytes = s.external_print_pdf(id).unwrap();
+    assert!(bytes.starts_with(&original));
+    assert_eq!(bytes, s.save_bytes(id).unwrap());
+    assert!(s.get(id).unwrap().dirty);
+    let mut reopened = Session::new();
+    let other = reopened.open("snapshot.pdf", None, bytes, None).unwrap();
+    assert_eq!(reopened.get(other).unwrap().info.pages[0].rotation, 90);
 }

@@ -5851,3 +5851,17 @@ fn korean_print_ready_pdf_preserves_unicode_fonts_and_three_pages() {
     assert!(pdf.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.contains(b"FontFile2"))));
     assert!(pdf.scan_objects().any(|(_, o)| o.as_dict().is_some_and(|d| d.contains(b"ToUnicode"))));
 }
+
+#[test]
+fn external_print_snapshot_tool_includes_edits_and_honours_root_without_launching() {
+    let dir = workdir("external-print");
+    let mut a = Automation::new().with_root(dir.clone()).unwrap();
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    let out = ok(&mut a, "doc_print_external", json!({"doc":doc,"preview_path":"snapshot.pdf"}));
+    assert_eq!(out["printed"], false);
+    assert_eq!(std::fs::read(dir.join("snapshot.pdf")).unwrap(), std::fs::read(dir.join("a.pdf")).unwrap());
+    assert!(a.call("doc_print_external", &json!({"doc":doc,"preview_path":"../escape.pdf"})).is_err());
+    assert!(a.call("doc_print_external", &json!({"doc":doc,"executable":"../outside.exe"})).is_err());
+    assert!(a.call("doc_print_external", &json!({"doc":doc})).is_err());
+    let _ = std::fs::remove_dir_all(dir);
+}

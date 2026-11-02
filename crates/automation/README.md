@@ -184,3 +184,5 @@ unapplied with a warning.
 `doc_batch` runs conversion, OCR and compression over files and optionally recursive
 folders. The CLI also exposes it as `pdfcraft-cli batch`. See the
 [batch guide](../../docs/cli-batch.md) for examples, output protection, errors and limits.
+
+`doc_print_external` exports the original-structure current-edit snapshot with `preview_path` (no printing), or explicitly opens the Windows SumatraPDF dialog with `executable`. Pass one destination. Paths obey `--root`; printer/paper/pages/scaling are chosen in the external dialog. A closed viewer is not proof of printing.

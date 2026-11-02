@@ -9,6 +9,27 @@ use pdfcraft_engine::print::{self, Binding, BookletSubset, Content, Layout, Orie
 use crate::theme::{self, Tokens};
 use crate::{PdfCraftApp, widgets};
 
+#[cfg(not(target_arch = "wasm32"))]
+mod paper_query;
+pub type PaperResult = Result<print::paper::Capabilities, String>;
+pub type PaperSource = std::sync::Arc<dyn Fn(&str) -> PaperResult + Send + Sync>;
+#[cfg(not(target_arch = "wasm32"))]
+struct WakeOnExit(Option<egui::Context>);
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for WakeOnExit {
+    fn drop(&mut self) {
+        if let Some(ctx) = &self.0 {
+            ctx.request_repaint();
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PrintMethod {
+    #[default]
+    Native,
+    Sumatra,
+}
+
 /// The preview pane, and the paper inside it (12 pt inset on each side).
 const PREVIEW_W: f32 = 320.0;
 const PREVIEW_H: f32 = 380.0;
@@ -70,6 +91,13 @@ pub struct PrintDraft {
     pub orientation: Orientation,
     pub content: Content,
     pub paper: usize,
+    pub paper_chosen: bool,
+    /// Capabilities belong only to the named printer; pending/failed reads are advisory.
+    pub paper_capabilities: Option<(String, Option<PaperResult>)>,
+    /// Remembered custom stock; resolve against each printer without overwriting it.
+    pub printer_paper: Option<print::paper::Paper>,
+    pub method: PrintMethod,
+    pub sumatra_exe: String,
     /// The sheet shown in the preview (0-based).
     pub sheet: usize,
     pub current_page: usize,
@@ -114,7 +142,12 @@ impl Default for PrintDraft {
             cut_marks: true,
             orientation: Orientation::Auto,
             content: Content::DocumentAndMarkups,
-            paper: 0,
+            paper: print::paper::initial(cfg!(windows), system_paper_locale().as_deref()),
+            paper_chosen: false,
+            paper_capabilities: None,
+            printer_paper: None,
+            method: PrintMethod::Native,
+            sumatra_exe: String::new(),
             sheet: 0,
             current_page: 0,
             driver_options: None,
@@ -125,7 +158,28 @@ impl Default for PrintDraft {
     }
 }
 
+fn system_paper_locale() -> Option<String> {
+    #[cfg(windows)]
+    {
+        sys_locale::get_locale()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
 impl PrintDraft {
+    pub fn effective_paper(&self) -> print::paper::Paper {
+        let (name, size) = PAPERS.get(self.paper).copied().unwrap_or(PAPERS[0]);
+        let wanted = self.printer_paper.clone().unwrap_or(print::paper::Paper { name: name.into(), size });
+        if let Some((printer, Some(Ok(caps)))) = &self.paper_capabilities
+            && self.printer.as_deref() == Some(printer.as_str())
+        {
+            return print::paper::resolve(&wanted, caps).unwrap_or(wanted);
+        }
+        wanted
+    }
+
     /// The engine settings for this draft (page count and labels from the document).
     pub fn settings(&self, count: usize, labels: &[String]) -> Result<print::Settings, String> {
         if self.handling == Handling::Multiple && self.order == PageOrder::CutStack && self.duplex != spool::Duplex::Off {
@@ -159,7 +213,7 @@ impl PrintDraft {
             Handling::Booklet => Layout::Booklet { subset: self.booklet_subset, binding: self.binding },
             Handling::Poster => Layout::Poster { scale: self.poster_scale, overlap: self.overlap, cut_marks: self.cut_marks },
         };
-        Ok(print::Settings { pages, paper: PAPERS[self.paper.min(PAPERS.len() - 1)].1, orientation: self.orientation, layout, content: self.content })
+        Ok(print::Settings { pages, paper: self.effective_paper().size, orientation: self.orientation, layout, content: self.content })
     }
 
     pub fn job(&self, title: &str) -> spool::Job {
@@ -196,6 +250,8 @@ pub fn system_printers() -> PrinterSource {
 pub(crate) struct PrintTasks {
     #[cfg(not(target_arch = "wasm32"))]
     printers: Option<std::sync::mpsc::Receiver<Vec<spool::Printer>>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    papers: paper_query::PaperReads,
     #[cfg(not(target_arch = "wasm32"))]
     jobs: Vec<(String, std::sync::mpsc::Receiver<Result<String, String>>)>,
     /// The browser print being drawn, a sheet a frame (`web_print`).
@@ -256,7 +312,10 @@ impl PdfCraftApp {
             (true, Which::Selected) => Which::All,
             (true, other) => other,
         };
+        #[cfg(not(target_arch = "wasm32"))]
+        self.print_tasks.papers.reset();
         self.print_draft = PrintDraft {
+            paper_capabilities: None,
             printers,
             printers_loading,
             printer_picked: keep.printer_picked,
@@ -289,8 +348,41 @@ impl PdfCraftApp {
         self.print_tasks.printers = Some(rx);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn poll_paper(&mut self) {
+        self.poll_paper_at(std::time::Instant::now());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn poll_paper_at(&mut self, now: std::time::Instant) {
+        if let Some(result) = self.print_tasks.papers.poll(self.print_draft.printer.as_deref(), now)
+            && let Some(printer) = self.print_draft.printer.clone()
+        {
+            self.print_draft.paper_capabilities = Some((printer, Some(result)));
+        }
+        if self.dialog != Some(crate::Dialog::Print) {
+            return;
+        }
+        let Some(printer) = self.print_draft.printer.clone() else {
+            self.print_tasks.papers.reset();
+            self.print_draft.paper_capabilities = None;
+            return;
+        };
+        let Some(source) = self.paper_source.clone() else {
+            return;
+        };
+        if self.print_draft.paper_capabilities.as_ref().is_some_and(|(name, _)| *name == printer) {
+            return;
+        }
+        self.print_draft.paper_capabilities = Some((printer.clone(), None));
+        if let Err(error) = self.print_tasks.papers.start(printer.clone(), source, self.ctx.clone(), now) {
+            self.print_draft.paper_capabilities = Some((printer, Some(Err(error))));
+        }
+    }
+
     /// Pick up a printer list or a spooled job that finished (each frame).
     pub(crate) fn poll_print(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.poll_paper();
         #[cfg(target_arch = "wasm32")]
         self.poll_web_print();
         #[cfg(not(target_arch = "wasm32"))]
@@ -342,13 +434,17 @@ impl PdfCraftApp {
     /// a preset path returns `true` once the save picker is showing; the file is written on a
     /// later frame, when the user has chosen where.
     pub fn print_now(&mut self) -> bool {
-        if self.print_draft.printers_loading && !self.print_draft.printer_picked {
+        if self.print_draft.method == PrintMethod::Native && self.print_draft.printers_loading && !self.print_draft.printer_picked {
             self.notify(tl!("Looking for printers…").to_string());
             return false;
         }
         // What's typed in a form field is part of what's printed (#166).
         if !self.commit_form_typing() {
             return false;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.print_draft.method == PrintMethod::Sumatra {
+            return self.open_sumatra();
         }
         let Some((_, id)) = self.active_ids() else { return false };
         let Some(doc) = self.session.get(id) else { return false };
@@ -391,6 +487,40 @@ impl PdfCraftApp {
             Some(printer) => self.send_to_printer(printer, bytes, self.print_draft.job(&name)),
             None => self.save_print_pdf(&name, bytes),
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn open_sumatra(&mut self) -> bool {
+        let Some((_, id)) = self.active_ids() else { return false };
+        let bytes = match self.session.external_print_pdf(id) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.notify_error(error);
+                return false;
+            }
+        };
+        let exe = std::path::PathBuf::from(&self.print_draft.sumatra_exe);
+        if !exe.is_absolute() || !exe.is_file() {
+            self.notify_error("SumatraPDF.exe의 전체 경로를 선택해 주세요.");
+            return false;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let wake = WakeOnExit(self.ctx.clone());
+        if std::thread::Builder::new()
+            .name("external print".into())
+            .spawn(move || {
+                let _wake = wake;
+                let result = print::external::open_dialog(&exe, &bytes).map_err(|e| e.to_string());
+                let _ = tx.send(result);
+            })
+            .is_err()
+        {
+            self.notify_error("외부 인쇄 작업을 시작하지 못했습니다.");
+            return false;
+        }
+        self.print_tasks.jobs.push(("SumatraPDF".into(), rx));
+        self.notify("SumatraPDF 인쇄 창에서 프린터·용지·배율을 확인하세요. 출력 성공 여부는 아직 확인되지 않았습니다.");
+        true
     }
 
     /// Spool a job off the UI thread: on Windows every sheet is rendered at the printer's
@@ -682,6 +812,36 @@ pub(crate) fn body(
 ) -> (bool, bool) {
     ui.set_width(820.0);
     ui.label(egui::RichText::new(tl!("Print")).font(theme::semibold(18.0)));
+    #[cfg(windows)]
+    ui.horizontal(|ui| {
+        ui.label("인쇄 방식:");
+        ui.selectable_value(&mut d.method, PrintMethod::Native, "기존 PdfCraft");
+        ui.selectable_value(&mut d.method, PrintMethod::Sumatra, "SumatraPDF (외부)");
+    });
+    if d.method == PrintMethod::Sumatra {
+        ui.label(
+            "저장하지 않은 편집을 포함한 문서를 원본 구조로 전달합니다. PdfCraft의 용지·페이지 범위·배율·부수 설정은 이 방식에 전달되지 않습니다.",
+        );
+        ui.label("SumatraPDF 인쇄 창에서 프린터와 A4(지원 시), 실제 크기 100%, 인쇄할 페이지 및 기타 옵션을 직접 선택하세요.");
+        ui.horizontal(|ui| {
+            ui.label("SumatraPDF.exe:");
+            ui.text_edit_singleline(&mut d.sumatra_exe);
+        });
+        return (ui.button("SumatraPDF 인쇄 창 열기").clicked(), ui.button(tl!("Cancel")).clicked());
+    }
+    if let Some((p, result)) = &d.paper_capabilities
+        && d.printer.as_ref() == Some(p)
+    {
+        match result {
+            None => {
+                ui.label("용지 정보를 확인 중입니다. 조회가 지연돼도 미리보기와 인쇄는 사용할 수 있습니다.");
+            }
+            Some(Err(_)) => {
+                ui.label("용지 정보를 읽지 못했습니다. 선택한 용지는 실제 인쇄 시 검증합니다.");
+            }
+            Some(Ok(_)) => {}
+        }
+    }
     ui.add_space(8.0);
     let settings = d.settings(sizes.len(), labels);
     let sheets = settings.as_ref().ok().and_then(|s| print::layout(sizes, s).ok()).unwrap_or_default();
@@ -773,12 +933,33 @@ pub(crate) fn body(
                 });
                 ui.end_row();
                 ui.label(tl!("Paper:"));
-                let paper_name = PAPERS.get(d.paper).map_or("US Letter", |p| p.0);
-                egui::ComboBox::from_id_salt("paper").selected_text(paper_name).width(260.0).show_ui(ui, |ui| {
-                    for (i, (name, _)) in PAPERS.iter().enumerate() {
-                        ui.selectable_value(&mut d.paper, i, *name);
+                let effective = d.effective_paper();
+                let before = d.paper;
+                egui::ComboBox::from_id_salt("paper").selected_text(&effective.name).width(260.0).show_ui(ui, |ui| {
+                    for (i, (name, size)) in PAPERS.iter().enumerate() {
+                        let supported = match &d.paper_capabilities {
+                            Some((p, Some(Ok(c)))) if d.printer.as_ref() == Some(p) => c.papers.iter().any(|v| print::matching_paper(v.size) == Some(i)),
+                            _ => true,
+                        };
+                        if ui.add_enabled(supported, egui::Button::selectable(d.printer_paper.is_none() && d.paper == i, *name)).clicked() {
+                            d.paper_chosen = true;
+                            d.paper = i;
+                            d.printer_paper = None;
+                        }
+                        let _ = size;
+                    }
+                    if let Some((p, Some(Ok(c)))) = &d.paper_capabilities
+                        && d.printer.as_ref() == Some(p) {
+                        for paper in &c.papers {
+                            if print::matching_paper(paper.size).is_none()
+                                && ui.selectable_label(d.printer_paper.as_ref() == Some(paper), &paper.name).clicked() {
+                                d.paper_chosen = true;
+                                d.printer_paper = Some(paper.clone());
+                            }
+                        }
                     }
                 });
+                if d.paper != before { d.sheet = 0; }
                 ui.end_row();
             });
             // Windows says which drivers can't print two-sided as they're asked; they keep their
@@ -804,6 +985,8 @@ pub(crate) fn body(
                     if ui.add_enabled(matched.is_some(), egui::Button::new(tl!("Match page at 100%"))).clicked()
                         && let Some(paper) = matched
                     {
+                        d.paper_chosen = true;
+                        d.printer_paper = None;
                         d.paper = paper;
                         d.handling = Handling::Size;
                         d.size = SizeMode::Actual;
@@ -1168,5 +1351,51 @@ mod tests {
         later.sheet = 2;
         let rasters = preview_rasters(&later, &sizes, &labels, 2.0, 8192.0);
         assert!(rasters.iter().any(|(page, _)| *page == 2));
+    }
+}
+
+#[cfg(test)]
+mod external_and_paper_tests {
+    use super::*;
+    #[test]
+    fn pending_failed_and_unsupported_paper_do_not_block_preview_settings() {
+        let mut draft = PrintDraft { paper: 4, printer: Some("Office".into()), ..Default::default() };
+        for result in [None, Some(Err("driver failed".into()))] {
+            draft.paper_capabilities = Some(("Office".into(), result));
+            assert_eq!(draft.settings(1, &["1".into()]).unwrap().paper, PAPERS[4].1);
+        }
+        let special = print::paper::Paper { name: "Label".into(), size: (200., 300.) };
+        draft.paper_capabilities = Some(("Office".into(), Some(Ok(print::paper::Capabilities { papers: vec![special.clone()], default: Some(0) }))));
+        assert_eq!(draft.settings(1, &["1".into()]).unwrap().paper, special.size);
+        assert_eq!(draft.paper, 4, "fallback must not replace saved A4");
+        draft.printer_paper = Some(print::paper::Paper { name: "Remembered stock".into(), size: (300., 400.) });
+        assert_eq!(draft.effective_paper().size, special.size);
+        assert_eq!(draft.printer_paper.as_ref().unwrap().size, (300., 400.), "fallback must not replace special stock");
+        draft.printer_paper = None;
+        draft.printer = Some("Other".into());
+        assert_eq!(draft.settings(1, &["1".into()]).unwrap().paper, PAPERS[4].1);
+    }
+    #[test]
+    fn factory_paper_is_not_mistaken_for_a_saved_user_choice() {
+        let app = PdfCraftApp::new();
+        let value: serde_json::Value = serde_json::from_str(&app.persist()).unwrap();
+        assert!(value["print_paper"].is_null());
+    }
+    #[test]
+    fn saved_paper_and_executable_restore_without_enabling_external_printing() {
+        let mut app = PdfCraftApp::new();
+        app.print_draft.paper = 1;
+        app.print_draft.paper_chosen = true;
+        app.print_draft.printer_paper = Some(print::paper::Paper { name: "Stock".into(), size: (200., 300.) });
+        app.print_draft.sumatra_exe = "C:/Tools/SumatraPDF.exe".into();
+        app.print_draft.method = PrintMethod::Sumatra;
+        let mut restored = PdfCraftApp::new();
+        restored.restore(&app.persist());
+        assert_eq!(restored.print_draft.paper, 1);
+        assert_eq!(restored.print_draft.printer_paper, app.print_draft.printer_paper);
+        assert_eq!(restored.print_draft.sumatra_exe, app.print_draft.sumatra_exe);
+        assert_eq!(restored.print_draft.method, PrintMethod::Native);
+        restored.restore(r#"{"print_paper":{"index":999999}}"#);
+        assert_eq!(restored.print_draft.paper, 1);
     }
 }

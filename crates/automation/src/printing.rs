@@ -11,6 +11,27 @@ fn bad(m: impl Into<String>) -> ToolError {
 }
 
 impl Automation {
+    /// External printing is explicit; preview_path exports identical snapshot bytes without a viewer.
+    pub(crate) fn doc_print_external(&mut self, a: &Args) -> Result<Value> {
+        let id = self.doc(a)?.id;
+        let bytes = self.session.external_print_pdf(id).map_err(failed)?;
+        match (a.opt_str("preview_path")?, a.opt_str("executable")?) {
+            (Some(path), None) => {
+                let path = self.resolve(path, true)?;
+                write_atomic(&path, &bytes)?;
+                Ok(json!({"path":path.to_string_lossy(),"bytes":bytes.len(),"route":"original-snapshot","printed":false}))
+            }
+            (None, Some(exe)) => {
+                let exe = self.resolve(exe, false)?;
+                let message = print::external::open_dialog(&exe, &bytes).map_err(failed)?;
+                Ok(json!({"message":message,"route":"original-snapshot","printing_confirmed":false}))
+            }
+            _ => Err(bad(
+                "Pass preview_path (snapshot only) OR executable (open SumatraPDF print dialog). Select paper/printer/pages/scaling in that dialog.",
+            )),
+        }
+    }
+
     pub(crate) fn printers(&self) -> Result<Value> {
         let list: Vec<Value> = spool::printers()
             .into_iter()

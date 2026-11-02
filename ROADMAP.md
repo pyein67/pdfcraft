@@ -1,5 +1,7 @@
 # PdfCraft roadmap
 
+> **Last reviewed:** 2026-11-02 · **Last updated:** 2026-11-02 · **Change:** minor (M10 local optional SumatraPDF snapshot dialog and advisory A4 defaults; Windows acceptance pending; estimates unchanged)
+
 > **Last reviewed:** 2026-10-29 · **Last updated:** 2026-10-29 · **Change:** minor (M10 restricted vector compatibility quality candidate with isolated image fallback; Windows hardware acceptance pending; estimates unchanged)
 
 > **Last reviewed:** 2026-10-16 · **Last updated:** 2026-10-16 · **Change:** minor (M14 Korean UI; Windows 10 interactive acceptance pending; estimates unchanged)
@@ -153,6 +155,8 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 | 8 | 1.0 polish: performance, right-to-left, missing languages, keyboard-only (M14) | 55–95 |
 
 ## Progress log
+
+- **2026-11-02 (M10):** Local optional SumatraPDF print dialog passes original-structure current-edit snapshots; native printing stays default. Korean Windows A4 preference and explicit paper persistence use bounded advisory media discovery. Existing Korean/icon/Type 3 paths preserved. Windows acceptance pending; see [details](docs/sumatra-print-a4.md).
 
 - **2026-10-28 (M10, conditional image printing):** Added bounded lossless 600 dpi raster output and a same-executable Windows worker for Type 3 resource/explicit image jobs; ordinary vector submission and Korean/icon history retained. See `docs/type3-print-safety.md`. Native Windows/hardware acceptance pending; Type 3 is a routing heuristic, not an established crash cause. Estimates unchanged.
 

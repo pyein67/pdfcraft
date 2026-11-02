@@ -96,7 +96,7 @@ mod print_ui;
 mod signature_drag;
 pub mod units;
 mod web_print;
-pub use print_ui::{Handling as PrintHandling, PrintDraft, PrinterSource, Which as PrintWhich, system_printers};
+pub use print_ui::{Handling as PrintHandling, PrintDraft, PrintMethod, PrinterSource, Which as PrintWhich, system_printers};
 mod redact_ui;
 pub use redact_ui::{HiddenDraft, PagesDraft as RedactPagesDraft, RedactPrefs, SearchDraft as RedactSearchDraft, SearchMode as RedactSearchMode};
 pub mod i18n;
@@ -542,6 +542,7 @@ pub struct PdfCraftApp {
     /// Lists the Print dialog's printers in the background (the desktop app sets it; see
     /// [`PrinterSource`]).
     pub printer_source: Option<PrinterSource>,
+    pub paper_source: Option<print_ui::PaperSource>,
     // A browser has no background print work: the type is empty there.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub(crate) print_tasks: print_ui::PrintTasks,
@@ -899,6 +900,7 @@ impl PdfCraftApp {
             update_source: None,
             updates: updates::Updates::default(),
             printer_source: None,
+            paper_source: if cfg!(windows) { Some(std::sync::Arc::new(pdfcraft_engine::print::paper::capabilities)) } else { None },
             print_tasks: print_ui::PrintTasks::default(),
             palette_open: false,
             palette_query: String::new(),
@@ -2096,7 +2098,10 @@ impl PdfCraftApp {
     /// Serialize the user's persistent state (recent files, theme). Local only.
     pub fn persist(&self) -> String {
         let trusted: Vec<String> = self.session.trusted_certificates().iter().map(pdfcraft_engine::sign::x509::to_pem).collect();
-        serde_json::json!({
+        let print_paper = self.print_draft.paper_chosen.then(
+            || serde_json::json!({"index": self.print_draft.paper, "custom": self.print_draft.printer_paper.as_ref().map(|p| (&p.name, p.size))}),
+        );
+        let mut state = serde_json::json!({
             "docking": self.docking,
             "docking_left_open": self.left_open,
             "docking_right": self.right,
@@ -2155,13 +2160,36 @@ impl PdfCraftApp {
             "combine_zoom": self.combine_zoom,
             "comments_panel_closed": self.comments_panel_closed,
             "right_panel_closed": self.right_panel_closed,
-        })
-        .to_string()
+        });
+        state["print_paper"] = serde_json::json!(print_paper);
+        state["sumatra_exe"] = serde_json::json!(self.print_draft.sumatra_exe);
+        state.to_string()
     }
 
     /// Restore state written by `persist`. Unknown or malformed data is ignored.
     pub fn restore(&mut self, json: &str) {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return };
+        if let Some(index) = v.pointer("/print_paper/index").and_then(serde_json::Value::as_u64).and_then(|v| usize::try_from(v).ok())
+            && index < pdfcraft_engine::print::PAPERS.len()
+        {
+            self.print_draft.paper = index;
+            self.print_draft.paper_chosen = true;
+        }
+        if let Some(custom) = v.pointer("/print_paper/custom")
+            && let Ok((name, size)) = serde_json::from_value::<(String, (f64, f64))>(custom.clone())
+            && size.0.is_finite()
+            && size.1.is_finite()
+            && size.0 >= 72.
+            && size.1 >= 72.
+            && size.0 <= 14400.
+            && size.1 <= 14400.
+        {
+            self.print_draft.printer_paper = Some(pdfcraft_engine::print::paper::Paper { name, size });
+        }
+        if let Some(exe) = v.get("sumatra_exe").and_then(serde_json::Value::as_str) {
+            self.print_draft.sumatra_exe = exe.to_owned();
+        }
+
         if let Some(saved) = v.get("docking")
             && let Ok(workspace) = serde_json::from_value::<docking::Workspace>(saved.clone())
             && workspace.validate().is_ok()

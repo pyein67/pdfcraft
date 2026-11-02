@@ -16,5 +16,13 @@ pdfcraft-content = { workspace = true }
 pdfcraft-model = { workspace = true }
 thiserror = { workspace = true }
 
+log = { workspace = true }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tempfile = "3"
+[target.'cfg(windows)'.dependencies]
+winprint = { git = "https://github.com/storytold/winprint.rs", rev = "5f80b9baf6b58937c401656634e42d33f00ddf49", default-features = false }
+windows-core = "=0.62.2"
+roxmltree = "0.20"
 [dev-dependencies]
+roxmltree = "0.20"
 tempfile = "3"

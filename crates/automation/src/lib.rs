@@ -702,6 +702,7 @@ impl Automation {
             "page_add_image" => self.page_add_image(&a)?,
             "content_update" => self.content_update(&a)?,
             "content_delete" => self.content_delete(&a)?,
+            "doc_print_external" => self.doc_print_external(&a)?,
             "doc_print" => self.doc_print(&a)?,
             "doc_remove_hidden" => self.doc_remove_hidden(&a)?,
             "doc_audit_redactions" => self.doc_audit_redactions(&a)?,

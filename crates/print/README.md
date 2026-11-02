@@ -83,3 +83,5 @@ a matching page. On Windows craft-print sends the sheets as vectors with a Print
 for the sheet's exact paper and no scaling (#599's approach), validated by the driver:
 a job is refused, not shrunk, when the driver lacks the paper or would change it. Verify
 the driver's paper settings and physical calibration before relying on drawing scale.
+
+Optional external printing: `external::open_dialog` opens an independently installed Windows SumatraPDF on a worker with exact snapshot bytes; no native imposition/settings are forwarded. `paper` provides read-only advisory capabilities and locale/fallback policy; native job validation remains unchanged. See `docs/sumatra-print-a4.md`.

@@ -20,6 +20,8 @@
 use pdfcraft_content::Matrix;
 use pdfcraft_cos::{Dict, Document, ObjRef, Object, SaveOptions, Stream, write_full};
 
+pub mod external;
+pub mod paper;
 pub mod range;
 pub mod spool;
 #[cfg(test)]

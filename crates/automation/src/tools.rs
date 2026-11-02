@@ -473,6 +473,8 @@ pub fn tools() -> Vec<ToolDef> {
         .ro()
         .with(schema(json!({ "doc": doc() }), &["doc"])),
         t("printers", "List printers", "The printers the system's print spooler knows (CUPS on macOS and Linux), with the default marked.").ro().with(schema(json!({}), &[])),
+        t("doc_print_external", "External print dialog", "Original-structure document snapshot with unsaved edits, no imposition or font conversion. Pass executable (absolute SumatraPDF.exe path on Windows) to open its print dialog, or preview_path to export identical bytes without printing. Select printer, paper (A4 if supported), pages and scaling there; PdfCraft print options are not forwarded. Success is not proof of printing.")
+            .with(schema(json!({"doc":doc(),"executable":path_arg(),"preview_path":path_arg()}), &["doc"])),
         t("printer_options", "List printer options", "A printer driver's own job options (CUPS: from its PPD), such as the paper tray, paper type or finishing: key, label, group, default and choices. Pass chosen values to doc_print as options. Empty on Windows, where the driver's preferences window holds them.")
             .ro()
             .with(schema(json!({ "printer": { "type": "string" } }), &["printer"])),
