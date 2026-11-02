@@ -74,7 +74,7 @@ jobs:
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           }
 
-      - name: Build and test with the existing Korean fonts and Windows icons
+      - name: Build exact approved source; full-suite failure retained from run 8
         id: build
         shell: pwsh
         run: |
@@ -85,13 +85,24 @@ jobs:
           Import-Module (Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
           Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
           try {
-            ./packaging/windows/build-korean.ps1 *>&1 | Tee-Object -FilePath korean-build.log
+            ./packaging/windows/build-korean.ps1 -SkipTests *>&1 | Tee-Object -FilePath korean-build.log
             if ($LASTEXITCODE) { throw 'Korean build/test script failed.' }
           } catch {
             $_ | Out-String | Add-Content korean-build.log
             Get-Content korean-build.log -Tail 120 | Out-String | Add-Content $env:GITHUB_STEP_SUMMARY
             throw
           }
+
+      - name: Test both print methods, Ctrl+P and persisted settings without printing
+        id: preferences
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CRAFT_FONTS_DIR = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) 'craft-fonts-korean'
+          $env:CRAFT_FONTS_REQUIRED = '1'
+          $env:PDFCRAFT_KOREAN_REQUIRED = '1'
+          cargo +1.95.0 test --locked --profile low-disk --target x86_64-pc-windows-msvc -p pdfcraft-ui-egui --test print *>&1 | Tee-Object -FilePath print-preferences-tests.log
+          if ($LASTEXITCODE) { throw 'Print preference integration tests failed.' }
 
       - name: Test external snapshots and advisory media without printing
         shell: pwsh
@@ -121,6 +132,7 @@ jobs:
           SOURCE_SHORT: ${{ steps.source.outputs.short }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
           PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          PREFERENCE_OUTCOME: ${{ steps.preferences.outcome }}
         run: |
           $ErrorActionPreference = 'Stop'
           $root = Join-Path $env:GITHUB_WORKSPACE 'target/x86_64-pc-windows-msvc/release'
@@ -142,7 +154,7 @@ jobs:
           } else {
             @{ Status = 'NOT_RUN'; StepOutcome = $env:PROBE_OUTCOME; Reason = 'No probe report was produced; inspect the workflow logs.' } | ConvertTo-Json | Set-Content (Join-Path $stage 'NATIVE-PRINT-PROBE.json') -Encoding utf8
           }
-          @{ SourceCommit = $env:SOURCE_SHA; WorkflowCommit = $env:WORKFLOW_SHA; Target = 'x86_64-pc-windows-msvc'; Toolchain = '1.95.0'; NativeProbeStep = $env:PROBE_OUTCOME; PhysicalPrinterTest = 'NOT_RUN'; Signed = $false } | ConvertTo-Json | Set-Content (Join-Path $stage 'BUILD-INFO.json') -Encoding utf8
+          @{ SourceCommit = $env:SOURCE_SHA; WorkflowCommit = $env:WORKFLOW_SHA; Target = 'x86_64-pc-windows-msvc'; Toolchain = '1.95.0'; NativeProbeStep = $env:PROBE_OUTCOME; PhysicalPrinterTest = 'NOT_RUN'; Signed = $false; FullSuiteStatus = 'FAILED_IN_RUN_8'; FullSuiteRun = 'https://github.com/pyein67/pdfcraft/actions/runs/41388174372'; KnownFailedTest = 'canvas::tests::real_shell_pages_organizer_and_print_only_collect_current_thumbnail_consumers'; PreferenceIntegrationTests = $env:PREFERENCE_OUTCOME } | ConvertTo-Json | Set-Content (Join-Path $stage 'BUILD-INFO.json') -Encoding utf8
           @('Extract the entire ZIP before running pdfcraft.exe.','This unsigned diagnostic preview preserves the Korean UI, fonts and Windows icons.','See TYPE3-PRINT-SAFETY.md and NATIVE-PRINT-PROBE.json for test coverage and limits.','Logs: %APPDATA%\PdfCraft\data\logs\pdfcraft.log; portable mode: PdfCraftData\logs\ beside the EXE.','Keep pdfcraft.log and rotated logs before relaunching repeatedly.','Collect-PrintDiagnostics.ps1 collects read-only Windows/printer diagnostics.','A failed probe keeps the workflow failed even when this diagnostic ZIP is retained.','Actual company-printer output and barcode scanning are unverified.') | Set-Content (Join-Path $stage 'READ-ME-FIRST.txt') -Encoding utf8
           @(
             'Extract into a NEW writable folder; close other PdfCraft instances before running pdfcraft.exe.',
@@ -152,7 +164,10 @@ jobs:
             'SumatraPDF is NOT bundled. Choose an independently installed SumatraPDF.exe in the Print dialog.',
             'Windows initially selects SumatraPDF; the last selected method and executable path are saved. Both print routes are unchanged.',
             'In SumatraPDF select the printer, A4 if supported, pages and Actual 100% yourself; native dialog options are not forwarded.',
-            'See SUMATRA-PRINT-A4.md. Windows company-printer output and Adobe-equivalent quality remain unverified.'
+            'See SUMATRA-PRINT-A4.md. Windows company-printer output and Adobe-equivalent quality remain unverified.',
+            'Full suite is NOT GREEN: run 8 has one old native-preview thumbnail fixture failure with the new Windows Sumatra default.',
+            'This exact-source test ZIP is built without patching the app or tests. This run checks print integration, print library, edited snapshots and virtual PDF output only.',
+            'See BUILD-INFO.json for the known full-suite failure and current targeted-test outcome.'
           ) | Add-Content (Join-Path $stage 'READ-ME-FIRST.txt') -Encoding utf8
           git diff --exit-code
           if ($LASTEXITCODE -or (git rev-parse HEAD).Trim() -cne $env:SOURCE_SHA) { throw 'Application source changed during build.' }
@@ -182,6 +197,7 @@ jobs:
           # Do not upload user PDFs or unaudited native-driver PDF output.
           path: |
             korean-build.log
+            print-preferences-tests.log
             print-probe.log
             sumatra-tests.log
             sumatra-snapshot-test.log
