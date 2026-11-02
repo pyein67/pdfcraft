@@ -10128,5 +10128,5 @@ milestone = "M10"
 status = "partial"
 commands = ["print.dialog"]
 tools = ["doc_print_external"]
-evidence = ["crates/engine/src/tests.rs::external_print_snapshot_preserves_bytes_and_unsaved_edit_without_mark_saved", "crates/automation/tests/automation.rs::external_print_snapshot_tool_includes_edits_and_honours_root_without_launching"]
-notes = "Explicit external Windows executable; original-structure snapshot, current edits, interactive print dialog. Native remains default. Select printer/paper/pages/scaling in SumatraPDF; PdfCraft options are not forwarded. Windows process lifetime, cancellation and physical quality need acceptance. No viewer bundled."
+evidence = ["crates/engine/src/tests.rs::external_print_snapshot_preserves_bytes_and_unsaved_edit_without_mark_saved", "crates/automation/tests/automation.rs::external_print_snapshot_tool_includes_edits_and_honours_root_without_launching", "crates/ui-egui/tests/print.rs::ctrl_p_remembers_each_print_method_after_reopen_and_restart", "crates/ui-egui/tests/print.rs::invalid_external_path_reports_error_and_never_changes_method"]
+notes = "Explicit external Windows executable; original-structure snapshot, current edits, interactive print dialog. Windows factory default is SumatraPDF; last method and executable path persist. Select printer/paper/pages/scaling in SumatraPDF; PdfCraft options are not forwarded. Windows process lifetime, cancellation and physical quality need acceptance. No viewer bundled."

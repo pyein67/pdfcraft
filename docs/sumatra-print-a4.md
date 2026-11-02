@@ -5,11 +5,11 @@ Reviewed: 2026-11-02. Base: `05bf537aac32c91ab84743e4b960b3ea2985b2d9` (the exis
 
 ## Preserved source
 
-The branch includes the complete base history: Korean embedding/input/save/search, Korean TSV catalog and UI language preference, existing supplied icon assets and Windows resource/registration code, conditional Type 3 compatibility worker, Type 1C/image fallbacks, diagnostics and opt-in Samsung A/B code. These implementations/assets are not changed. The native default remains PdfCraft and Fit retains its existing 18 pt margin. No DPI, antialiasing, Samsung driver option or printer default changes.
+The branch includes the complete base history: Korean embedding/input/save/search, Korean TSV catalog and UI language preference, existing supplied icon assets and Windows resource/registration code, conditional Type 3 compatibility worker, Type 1C/image fallbacks, diagnostics and opt-in Samsung A/B code. These implementations/assets are not changed. Windows initially selects SumatraPDF and remembers the last chosen method; Fit retains its existing 18 pt margin. No DPI, antialiasing, Samsung driver option or printer default changes.
 
 ## External print route
 
-In Print on Windows choose **SumatraPDF (외부)**, enter the full path to an independently installed `SumatraPDF.exe`, and click **SumatraPDF 인쇄 창 열기**. The viewer is not bundled, installed or downloaded by PdfCraft. The executable path is remembered; the method is not persisted, so a new app launch defaults to native printing.
+In Print on Windows choose **SumatraPDF (외부)**, enter the full path to an independently installed `SumatraPDF.exe`, and click **SumatraPDF 인쇄 창 열기**. The viewer is not bundled, installed or downloaded by PdfCraft. The executable path and print method are remembered. With no saved method, Windows starts with SumatraPDF; an existing saved Native choice remains Native. Other platforms keep the native factory default. Missing/invalid saved method values use the factory default. An invalid executable produces the existing error and does not switch methods.
 
 This route commits active form typing, checks the existing print permission, then uses `Session::external_print_pdf` / incremental `save_bytes`. An unedited PDF is passed byte-for-byte; unsaved edits are appended without marking the document saved. The original file is not overwritten. No imposition, Type 3 → Type 1C conversion, image conversion, or barcode/QR resampling is performed by this route. Existing font/image/content streams survive incremental serialization. Edits already made to those objects intentionally affect the snapshot. Password-protected snapshots retain encryption: SumatraPDF may ask for the password again; no password is put on the command line. Pending annotation text still needs the normal Post action, while active form typing follows the existing commit path.
 
@@ -32,7 +32,13 @@ The native media adapter and bounded query state machine are selectively reused 
 
 Preview and native submission use the same `effective_paper` dimensions. The existing craft-print exact-sheet PrintTicket validation is preserved; driver substitutions are still refused. Actual device acceptance and physical measurements are not established by synthetic tests. `print.paper` stages/HRESULTs go to normal app logs (portable: `PdfCraftData/logs/pdfcraft.log`); no special switch, raw XML, printer names or PDF content in these new events.
 
-## Verification
+## Print-method preference follow-up
+
+Based on `87dc9fa03dbf1e60a37b2644dd2ad9b511e8a8ad`, isolated on `fix/remember-print-method`. The only product changes are the Windows factory method and the `print_method` settings field (`native`/`sumatra`). Existing `sumatra_exe` persistence, route implementations, error handling, paper policy, rendering and assets are unchanged. Selection survives cancelling/reopening Print and restarting through the existing app settings persistence; there is no automatic native fallback. No push or Windows build for this follow-up.
+
+Local preference verification: 383 UI unit tests passed (one existing raster-measurement probe ignored), plus 17 Print integration tests passed. The original sandbox blocked three existing loopback transport tests; rerunning with local networking allowed passed the full suite. The new tests cover both saved methods, missing/invalid settings, Korean executable paths, real Ctrl+P after reopen/restart, and empty/missing executables without method changes or printing. A negative control that removed method restoration failed the preference regression; the implementation was restored before final checks.
+
+## Original implementation verification
 
 Host checks (Rust 1.95, locked dependencies, required existing Korean font):
 

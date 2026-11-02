@@ -7,6 +7,8 @@ use pdfcraft_ui_egui::{Dialog, PdfCraftApp};
 fn harness() -> Harness<'static, PdfCraftApp> {
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
         let mut app = PdfCraftApp::new();
+        // These existing tests explicitly exercise the native Print controls.
+        app.print_draft.method = pdfcraft_ui_egui::PrintMethod::Native;
         app.set_option("language", "en").unwrap();
         app.open_bytes("form.pdf", None, include_bytes!("data/form.pdf").to_vec()).unwrap();
         app
@@ -41,6 +43,8 @@ fn current_print_page_saves_the_viewed_page_when_labels_restart() {
     bytes.extend_from_slice(format!("trailer << /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes());
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_| {
         let mut app = PdfCraftApp::new();
+        // These existing tests explicitly exercise the native Print controls.
+        app.print_draft.method = pdfcraft_ui_egui::PrintMethod::Native;
         app.set_option("language", "en").unwrap();
         app.open_bytes("labelled.pdf", None, bytes).unwrap();
         app
@@ -313,6 +317,8 @@ fn printers_listed_in_the_background_preselect_the_default_unless_one_was_picked
 fn architectural_page_can_be_matched_at_100_percent() {
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 1000.0)).build_eframe(|_cc| {
         let mut app = PdfCraftApp::new();
+        // These existing tests explicitly exercise the native Print controls.
+        app.print_draft.method = pdfcraft_ui_egui::PrintMethod::Native;
         app.set_option("language", "en").unwrap();
         let bytes = app.session.create_blank(2592.0, 1728.0, 1).unwrap();
         app.open_bytes("architectural.pdf", None, bytes.as_ref().clone()).unwrap();
@@ -477,4 +483,58 @@ fn external_print_dialog_requires_explicit_executable_and_explains_own_settings(
     assert_eq!(h.state().dialog, Some(Dialog::Print));
     assert!(h.state().toast.as_ref().unwrap().0.contains("SumatraPDF.exe"));
     h.get_by_label("SumatraPDF.exe:");
+}
+
+#[test]
+fn ctrl_p_remembers_each_print_method_after_reopen_and_restart() {
+    use pdfcraft_ui_egui::PrintMethod;
+    for method in [PrintMethod::Native, PrintMethod::Sumatra] {
+        let mut h = harness();
+        h.state_mut().print_draft.method = method;
+        h.state_mut().print_draft.sumatra_exe = "C:/한글 경로/SumatraPDF.exe".into();
+        for _ in 0..2 {
+            h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::P);
+            h.run_steps(3);
+            assert_eq!(h.state().dialog, Some(Dialog::Print));
+            assert_eq!(h.state().print_draft.method, method);
+            h.get_by_label("Cancel").click();
+            h.run_steps(3);
+            assert_eq!(h.state().dialog, None);
+        }
+        let saved = h.state().persist();
+        let mut restarted = Harness::builder().with_size(egui::vec2(1400., 900.)).build_eframe(move |_| {
+            let mut app = PdfCraftApp::new();
+            app.restore(&saved);
+            app.open_bytes("form.pdf", None, include_bytes!("data/form.pdf").to_vec()).unwrap();
+            app
+        });
+        restarted.run_steps(4);
+        restarted.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::P);
+        restarted.run_steps(3);
+        assert_eq!(restarted.state().dialog, Some(Dialog::Print));
+        assert_eq!(restarted.state().print_draft.method, method);
+        assert_eq!(restarted.state().print_draft.sumatra_exe, "C:/한글 경로/SumatraPDF.exe");
+    }
+}
+
+#[test]
+fn invalid_external_path_reports_error_and_never_changes_method() {
+    use pdfcraft_ui_egui::PrintMethod;
+    let missing = std::env::temp_dir().join(format!("pdfcraft-missing-viewer-{}", std::process::id())).join("SumatraPDF.exe");
+    assert!(!missing.is_file());
+    for path in [String::new(), missing.to_string_lossy().into_owned()] {
+        let mut h = harness();
+        h.state_mut().print_draft.method = PrintMethod::Sumatra;
+        h.state_mut().print_draft.sumatra_exe = path.clone();
+        let saved = h.state().persist();
+        h.state_mut().restore(&saved);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::P);
+        h.run_steps(3);
+        h.get_by_label("SumatraPDF 인쇄 창 열기").click();
+        h.run_steps(3);
+        assert_eq!(h.state().dialog, Some(Dialog::Print));
+        assert_eq!(h.state().print_draft.method, PrintMethod::Sumatra);
+        assert_eq!(h.state().print_draft.sumatra_exe, path);
+        assert!(h.state().toast.as_ref().unwrap().0.contains("SumatraPDF.exe"));
+    }
 }

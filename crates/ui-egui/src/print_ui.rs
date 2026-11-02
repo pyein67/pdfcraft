@@ -23,11 +23,21 @@ impl Drop for WakeOnExit {
         }
     }
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PrintMethod {
-    #[default]
     Native,
     Sumatra,
+}
+impl PrintMethod {
+    fn initial(windows: bool) -> Self {
+        if windows { Self::Sumatra } else { Self::Native }
+    }
+}
+impl Default for PrintMethod {
+    fn default() -> Self {
+        Self::initial(cfg!(windows))
+    }
 }
 
 /// The preview pane, and the paper inside it (12 pt inset on each side).
@@ -146,7 +156,7 @@ impl Default for PrintDraft {
             paper_chosen: false,
             paper_capabilities: None,
             printer_paper: None,
-            method: PrintMethod::Native,
+            method: PrintMethod::default(),
             sumatra_exe: String::new(),
             sheet: 0,
             current_page: 0,
@@ -1382,7 +1392,26 @@ mod external_and_paper_tests {
         assert!(value["print_paper"].is_null());
     }
     #[test]
-    fn saved_paper_and_executable_restore_without_enabling_external_printing() {
+    fn print_method_factory_and_missing_or_invalid_saved_values() {
+        assert_eq!(PrintMethod::initial(true), PrintMethod::Sumatra);
+        assert_eq!(PrintMethod::initial(false), PrintMethod::Native);
+        for state in ["{}", r#"{"print_method":"unknown"}"#, r#"{"print_method":null}"#, r#"{"print_method":123}"#] {
+            let mut app = PdfCraftApp::new();
+            app.restore(state);
+            assert_eq!(app.print_draft.method, PrintMethod::initial(cfg!(windows)));
+        }
+        for method in [PrintMethod::Native, PrintMethod::Sumatra] {
+            let mut app = PdfCraftApp::new();
+            app.print_draft.method = method;
+            app.print_draft.sumatra_exe = "C:/한글 경로/SumatraPDF.exe".into();
+            let mut restored = PdfCraftApp::new();
+            restored.restore(&app.persist());
+            assert_eq!(restored.print_draft.method, method);
+            assert_eq!(restored.print_draft.sumatra_exe, app.print_draft.sumatra_exe);
+        }
+    }
+    #[test]
+    fn saved_paper_executable_and_print_method_restore() {
         let mut app = PdfCraftApp::new();
         app.print_draft.paper = 1;
         app.print_draft.paper_chosen = true;
@@ -1394,7 +1423,7 @@ mod external_and_paper_tests {
         assert_eq!(restored.print_draft.paper, 1);
         assert_eq!(restored.print_draft.printer_paper, app.print_draft.printer_paper);
         assert_eq!(restored.print_draft.sumatra_exe, app.print_draft.sumatra_exe);
-        assert_eq!(restored.print_draft.method, PrintMethod::Native);
+        assert_eq!(restored.print_draft.method, PrintMethod::Sumatra);
         restored.restore(r#"{"print_paper":{"index":999999}}"#);
         assert_eq!(restored.print_draft.paper, 1);
     }

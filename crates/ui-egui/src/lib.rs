@@ -2162,6 +2162,7 @@ impl PdfCraftApp {
             "right_panel_closed": self.right_panel_closed,
         });
         state["print_paper"] = serde_json::json!(print_paper);
+        state["print_method"] = serde_json::json!(self.print_draft.method);
         state["sumatra_exe"] = serde_json::json!(self.print_draft.sumatra_exe);
         state.to_string()
     }
@@ -2185,6 +2186,9 @@ impl PdfCraftApp {
             && size.1 <= 14400.
         {
             self.print_draft.printer_paper = Some(pdfcraft_engine::print::paper::Paper { name, size });
+        }
+        if let Some(method) = v.get("print_method").and_then(|v| serde_json::from_value(v.clone()).ok()) {
+            self.print_draft.method = method;
         }
         if let Some(exe) = v.get("sumatra_exe").and_then(serde_json::Value::as_str) {
             self.print_draft.sumatra_exe = exe.to_owned();
