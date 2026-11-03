@@ -5133,6 +5133,9 @@ trailer << /Root 1 0 R >>
         h.run_steps(2);
         assert!((1..50).contains(&h.state().views[0].thumb_demand.len()));
         h.state_mut().views[0].organize = false;
+        // This test checks the native preview. Windows defaults to Sumatra external
+        // printing, whose dialog deliberately has no in-app preview thumbnails.
+        h.state_mut().print_draft.method = crate::print_ui::PrintMethod::Native;
         h.state_mut().dialog = Some(crate::Dialog::Print);
         h.state_mut().print_draft.sheet = 9999;
         h.run_steps(2);

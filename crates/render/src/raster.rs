@@ -73,10 +73,32 @@ impl RenderConfig {
         InterpreterSettings {
             ocg_overrides: self.layers.clone(),
             hide_comments: self.hide_comments,
-            font_resolver: Arc::new(move |query| japanese_fallback(query).or_else(|| standard(query))),
+            font_resolver: Arc::new(move |query| korean_fallback(query).or_else(|| japanese_fallback(query)).or_else(|| standard(query))),
             ..InterpreterSettings::default()
         }
     }
+}
+
+/// A build-provided Korean face for a non-embedded Adobe-Korea1 CID font. Annotation
+/// appearance streams can reference these fonts just like page content. Without this resolver,
+/// Hangul in a foreign FreeText /AP is invisible even though /Contents is intact.
+///
+/// Do not use a Korean face for unrelated CIDs: their numbering and Unicode mapping differ.
+/// The vendored CID interpreter maps Adobe-Korea1 CIDs through its UCS2 CMap first.
+fn korean_fallback(query: &FontQuery) -> Option<(FontData, u32)> {
+    let FontQuery::Fallback(f) = query else { return None };
+    if f.character_collection.as_ref()?.family != CidFamily::AdobeKorea1 {
+        return None;
+    }
+    // Prefer the requested weight when this licensed Korean family supplies it.
+    // Acrobat often writes /BaseFont ending in -Bold without embedding its program.
+    let bold = f.is_bold || f.font_weight >= 600;
+    let face = if bold {
+        pdfcraft_fonts::korean::ui_fonts().into_iter().find(|font| font.style == "Bold").or_else(pdfcraft_fonts::korean::document_font)
+    } else {
+        pdfcraft_fonts::korean::document_font()
+    }?;
+    Some((Arc::new(face.bytes), 0))
 }
 
 /// A Japanese face from craft-fonts for a CID font of the Adobe-Japan1 collection that the PDF
@@ -5577,6 +5599,59 @@ endstream endobj
         let w = out.width as usize;
         assert_eq!(rgb_at(&out.rgba, w, 35, 35), [0, 255, 255], "the transfer function was not applied to a cached image");
         assert_eq!(rgb_at(&out.rgba, w, 100, 35), [255, 0, 0]);
+    }
+
+    /// Acrobat-style FreeText appearances can reference an unembedded Korean CID face.
+    /// The /Contents can be readable in the comment tooltip while the /AP glyphs are blank.
+    /// A permitted build-input Korean face should make the original appearance visible,
+    /// without changing the annotation or any existing print settings.
+    #[test]
+    fn non_embedded_korean_freetext_appearance_draws_hangul() {
+        if pdfcraft_fonts::korean::document_font().is_none() {
+            eprintln!("built without Korean craft-fonts: the visual Korean test is skipped");
+            return;
+        }
+        let content = "0 0 1 rg\nBT /F1 24 Tf 10 22 Td <D55CAE00> Tj ET";
+        let pdf = format!(
+            "%PDF-1.7
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 150 90] /Annots [4 0 R] >> endobj
+4 0 obj << /Type /Annot /Subtype /FreeText /Rect [10 10 130 80] /Contents <FEFFD55CAE00> /AP << /N 5 0 R >> >> endobj
+5 0 obj << /Type /XObject /Subtype /Form /BBox [0 0 120 70] /Resources << /Font << /F1 6 0 R >> >> /Length {} >> stream
+{content}
+endstream endobj
+6 0 obj << /Type /Font /Subtype /Type0 /BaseFont /AdobeGothicStd-Bold /Encoding /UniKS-UTF16-H /DescendantFonts [7 0 R] >> endobj
+7 0 obj << /Type /Font /Subtype /CIDFontType0 /BaseFont /AdobeGothicStd-Bold /CIDSystemInfo << /Registry (Adobe) /Ordering (Korea1) /Supplement 1 >> /FontDescriptor 8 0 R /DW 1000 >> endobj
+8 0 obj << /Type /FontDescriptor /FontName /AdobeGothicStd-Bold /Flags 32 /FontWeight 700 /FontBBox [0 -200 1000 900] /ItalicAngle 0 /Ascent 900 /Descent -200 /CapHeight 700 /StemV 80 >> endobj
+trailer << /Root 1 0 R >>
+%%EOF",
+            content.len()
+        );
+        let mut renderer = PageRenderer::new(Arc::new(pdf.into_bytes()), RenderConfig::default());
+        let page = renderer.render(RenderRequest { page: 0, kind: RequestKind::Pixels, scale: 1.0, ..Default::default() });
+        assert!(page.error.is_none(), "{:?}", page.error);
+        let blue_ink = page.rgba.as_chunks::<4>().0.iter().filter(|px| px[0] < 180 && px[2] > 120).count();
+        assert!(blue_ink > 100, "the Korean FreeText /AP is blank: {blue_ink} blue pixels");
+    }
+
+    #[test]
+    fn korean_fallback_does_not_take_over_other_cid_collections() {
+        use hayro::hayro_interpret::font::FallbackFontQuery;
+        use hayro::hayro_interpret::hayro_cmap::CharacterCollection;
+        for (family, expected) in [
+            (CidFamily::AdobeKorea1, pdfcraft_fonts::korean::document_font().is_some()),
+            (CidFamily::AdobeJapan1, false),
+            (CidFamily::AdobeGB1, false),
+        ] {
+            let query = FontQuery::Fallback(FallbackFontQuery {
+                character_collection: Some(CharacterCollection { family, supplement: 2 }),
+                ..FallbackFontQuery::default()
+            });
+            assert_eq!(super::korean_fallback(&query).is_some(), expected);
+        }
+        let query = FontQuery::Fallback(FallbackFontQuery::default());
+        assert!(super::korean_fallback(&query).is_none());
     }
 
     /// A Japanese CID font that isn't embedded (Adobe-Japan1, as `HeiseiMin-W3` with
