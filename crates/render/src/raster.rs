@@ -90,7 +90,17 @@ fn korean_fallback(query: &FontQuery) -> Option<(FontData, u32)> {
     if f.character_collection.as_ref()?.family != CidFamily::AdobeKorea1 {
         return None;
     }
-    let face = pdfcraft_fonts::korean::document_font()?;
+    // Prefer the requested weight when this licensed Korean family supplies it.
+    // Acrobat often writes /BaseFont ending in -Bold without embedding its program.
+    let bold = f.is_bold || f.font_weight >= 600;
+    let face = if bold {
+        pdfcraft_fonts::korean::ui_fonts()
+            .into_iter()
+            .find(|font| font.style == "Bold")
+            .or_else(pdfcraft_fonts::korean::document_font)
+    } else {
+        pdfcraft_fonts::korean::document_font()
+    }?;
     Some((Arc::new(face.bytes), 0))
 }
 
