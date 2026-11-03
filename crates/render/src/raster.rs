@@ -94,10 +94,7 @@ fn korean_fallback(query: &FontQuery) -> Option<(FontData, u32)> {
     // Acrobat often writes /BaseFont ending in -Bold without embedding its program.
     let bold = f.is_bold || f.font_weight >= 600;
     let face = if bold {
-        pdfcraft_fonts::korean::ui_fonts()
-            .into_iter()
-            .find(|font| font.style == "Bold")
-            .or_else(pdfcraft_fonts::korean::document_font)
+        pdfcraft_fonts::korean::ui_fonts().into_iter().find(|font| font.style == "Bold").or_else(pdfcraft_fonts::korean::document_font)
     } else {
         pdfcraft_fonts::korean::document_font()
     }?;
@@ -5603,7 +5600,6 @@ endstream endobj
         assert_eq!(rgb_at(&out.rgba, w, 35, 35), [0, 255, 255], "the transfer function was not applied to a cached image");
         assert_eq!(rgb_at(&out.rgba, w, 100, 35), [255, 0, 0]);
     }
-
 
     /// Acrobat-style FreeText appearances can reference an unembedded Korean CID face.
     /// The /Contents can be readable in the comment tooltip while the /AP glyphs are blank.
