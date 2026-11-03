@@ -1270,9 +1270,26 @@ pub fn orient_image_stamp(doc: &mut Document, page: usize, index: usize, rotatio
     Ok(())
 }
 
+/// Only reuse an actual embedded program whose Unicode map can encode every row.
+fn has_korean_font(doc: &Document, d: &Dict) -> bool {
+    if d.name(b"Subtype") != Some(b"FreeText") {
+        return false;
+    }
+    let Some(font) = d.get(b"PCKoreanFont").and_then(|o| doc.dict(o)) else { return false };
+    if pdfcraft_fonts::pdf::embedded_sfnt(doc, &font).is_none() {
+        return false;
+    }
+    let metrics = pdfcraft_fonts::pdf::Metrics::from_dict(doc, &font);
+    let text = d.get(b"Contents").and_then(Object::as_string).map(PdfString::to_text).unwrap_or_default();
+    pdfcraft_fonts::korean::compose(&text).split(['\n', '\r']).all(|line| metrics.encode(line).is_some())
+}
+
 /// A comment another program drew, whose text the standard fonts can't draw. Redrawing it would
 /// replace those characters with `?`, so the edit is refused before the dictionary changes.
 fn refuse_foreign_text(doc: &Document, d: &Dict) -> Result<(), AnnotError> {
+    if has_korean_font(doc, d) {
+        return Ok(());
+    }
     let drawn_elsewhere =
         d.get(b"AP").is_some_and(|ap| doc.resolve(ap).as_dict().is_some_and(|ap| ap.contains(b"N"))) && pdfcraft_fonts::undrawn_mark(d).is_none();
     if drawn_elsewhere && let Some((what, c)) = appearance::undrawable_text(d) {
@@ -1312,7 +1329,22 @@ fn redraw_or_restore(doc: &mut Document, r: ObjRef, before: Dict) -> Result<(), 
 /// `?` permanent. For new text (a new comment, changed contents), as Acrobat keeps text its font
 /// can't show, and for display-only copies.
 fn draw_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
-    let d = annot_dict(doc, r);
+    let mut d = annot_dict(doc, r);
+    let text = d.get(b"Contents").and_then(Object::as_string).map(PdfString::to_text).unwrap_or_default();
+    if d.name(b"Subtype") == Some(b"FreeText") && pdfcraft_fonts::korean::contains_hangul(&text) {
+        // Refuse missing fonts/glyphs instead of ever committing a `???` appearance.
+        if !has_korean_font(doc, &d) {
+            if !pdfcraft_fonts::korean::can_draw(&text) {
+                return Err(AnnotError::Undrawable("this text needs the Korean font build input, or contains a glyph it cannot draw".into()));
+            }
+            let mut fonts = Dict::new();
+            let (name, _) = pdfcraft_fonts::korean::embed(doc, &mut fonts).map_err(AnnotError::Invalid)?;
+            let font = fonts.get(name.as_bytes()).cloned().ok_or_else(|| AnnotError::Invalid("missing embedded Korean font".into()))?;
+            d.set(b"PCKoreanFont".to_vec(), font);
+        }
+    } else {
+        d.remove(b"PCKoreanFont");
+    }
     let subtype = String::from_utf8_lossy(d.name(b"Subtype").unwrap_or_default()).into_owned();
     let Some(stream) = build_appearance(doc, &d) else { return Err(AnnotError::Unsupported(subtype)) };
     apply_appearance(doc, r, &d, stream)
@@ -1321,7 +1353,8 @@ fn draw_appearance(doc: &mut Document, r: ObjRef) -> Result<(), AnnotError> {
 /// Draw the appearance for an annotation dictionary: the expensive half of [`set_appearance`].
 /// Pure from the dictionary and the objects it points at, so [`AppearanceCache`] can reuse it.
 fn build_appearance(doc: &Document, d: &Dict) -> Option<Stream> {
-    let mut stream = appearance::build(d)?;
+    let font = d.get(b"PCKoreanFont").and_then(|o| doc.dict(o)).map(|d| pdfcraft_fonts::pdf::Metrics::from_dict(doc, &d));
+    let mut stream = appearance::build_with_font(d, font.as_ref())?;
     // Picture-stamp restyling must retain the placement's page-axis correction.
     if d.get(b"PCPicture").is_some() {
         let matrix = d.get(b"AP").and_then(|ap| {
@@ -1340,7 +1373,8 @@ fn build_appearance(doc: &Document, d: &Dict) -> Option<Stream> {
 /// Store a built appearance on the annotation: the cheap half of [`set_appearance`].
 fn apply_appearance(doc: &mut Document, r: ObjRef, d: &Dict, stream: Stream) -> Result<(), AnnotError> {
     // Characters the standard fonts can't draw came out as `?`: mark the annotation with the first.
-    let missing = appearance::undrawable_text(d).map(|(_, c)| c);
+    let missing = if has_korean_font(doc, d) { None } else { appearance::undrawable_text(d).map(|(_, c)| c) };
+    let stream_font = d.get(b"PCKoreanFont").cloned();
     let ap = doc.add(Object::Stream(stream));
     // A copy (a shared /AP is left alone) that keeps unknown entries; the old down and rollover
     // appearances would show the previous look on press or hover, so they go with the old /N.
@@ -1350,6 +1384,11 @@ fn apply_appearance(doc: &mut Document, r: ObjRef, d: &Dict, stream: Stream) -> 
     apd.set(b"N".to_vec(), Object::Ref(ap));
     doc.update_dict(r, |d| {
         d.set(b"AP".to_vec(), Object::Dict(apd));
+        if let Some(font) = stream_font {
+            d.set(b"PCKoreanFont".to_vec(), font);
+        } else {
+            d.remove(b"PCKoreanFont");
+        }
         d.remove(b"AS");
         pdfcraft_fonts::set_undrawn_mark(d, missing);
     })?;
@@ -1434,6 +1473,12 @@ pub fn with_missing_appearances_cached(doc: &Document, cache: &mut AppearanceCac
             }
             let has_normal = d.get(b"AP").is_some_and(|ap| doc.resolve(ap).as_dict().is_some_and(|ap| ap.contains(b"N")));
             if has_normal {
+                continue;
+            }
+            if d.name(b"Subtype") == Some(b"FreeText")
+                && d.get(b"Contents").and_then(Object::as_string).is_some_and(|s| pdfcraft_fonts::korean::contains_hangul(&s.to_text()))
+            {
+                draw_appearance(copy.get_or_insert_with(|| doc.clone()), r).ok();
                 continue;
             }
             if let Some(stream) = cache.get(r) {

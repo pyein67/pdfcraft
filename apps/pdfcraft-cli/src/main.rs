@@ -74,6 +74,9 @@ help and feedback: https://discord.gg/artcraft"
 );
 
 fn main() -> ExitCode {
+    if let Some(code) = pdfcraft_engine::print_safety::worker_entry() {
+        return code;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     // `<command> --help` too; only right after the command, so a later `-h` (a value) still reaches it.
     let command = match args.get(1).map(String::as_str) {

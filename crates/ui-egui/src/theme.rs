@@ -345,6 +345,7 @@ fn font_definitions_for_platform(prefer_hans: bool, platform: FontPolicyPlatform
         .chain(pdfcraft_fonts::ui_telugu_fonts())
         .chain(pdfcraft_fonts::ui_hebrew_fonts())
         .chain(pdfcraft_fonts::ui_thai_fonts())
+        .chain(pdfcraft_fonts::korean::ui_fonts())
     {
         let name = face.name();
         if !fonts.font_data.contains_key(&name) {

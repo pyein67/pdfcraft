@@ -1,0 +1,85 @@
+name: Windows x64 Korean build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/korean-ui-localization, feat/korean-windows-icon]
+  pull_request:
+    paths:
+      - 'apps/pdfcraft/**'
+      - 'assets/app-icon/**'
+      - 'packaging/windows/**'
+      - 'crates/engine/**'
+      - 'crates/fonts/**'
+      - 'crates/annot/**'
+      - 'crates/edit/**'
+      - 'crates/render/**'
+      - 'crates/ui-egui/**'
+      - 'crates/automation/**'
+      - 'xtask/**'
+      - 'ATTRIBUTION.toml'
+      - 'packaging/windows/build-korean.ps1'
+      - '.github/workflows/windows-korean.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Validate Windows packaging scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem packaging/windows/*.ps1 | ForEach-Object {
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          }
+      - name: Build and test PdfCraft with Korean font embedding
+        shell: pwsh
+        run: |
+          try {
+            ./packaging/windows/build-korean.ps1 *>&1 | Tee-Object -FilePath korean-build.log
+          } catch {
+            $_ | Out-String | Add-Content korean-build.log
+            '### Korean build failure' | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
+            Get-Content korean-build.log -Tail 200 | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+            $message = (Get-Content korean-build.log -Tail 60) -join "`n"
+            if ($message.Length -gt 12000) { $message = $message.Substring($message.Length - 12000) }
+            $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Korean build output::$message"
+            throw
+          }
+      - name: Upload failed Korean build log
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: korean-build-log
+          path: korean-build.log
+          if-no-files-found: ignore
+      - name: Upload unsigned x64 executables and font licence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pdfcraft-0.8.0-windows-x64-korean-ui-pdf-icon-unsigned
+          path: |
+            target/x86_64-pc-windows-msvc/release/pdfcraft.exe
+            target/x86_64-pc-windows-msvc/release/pdfcraft-cli.exe
+            target/x86_64-pc-windows-msvc/release/NanumGothic-OFL.txt
+            target/x86_64-pc-windows-msvc/release/KOREAN-ATTRIBUTION.txt
+            target/x86_64-pc-windows-msvc/release/ATTRIBUTION.md
+            target/x86_64-pc-windows-msvc/release/Register-PdfCraft.ps1
+            target/x86_64-pc-windows-msvc/release/WINDOWS-ICON-README.md
+            target/x86_64-pc-windows-msvc/release/NOTICE
+            target/x86_64-pc-windows-msvc/release/LICENSE-MIT
+            target/x86_64-pc-windows-msvc/release/LICENSE-APACHE
+            target/x86_64-pc-windows-msvc/release/craft-fonts-licences/**
+          if-no-files-found: error

@@ -128,12 +128,16 @@ impl Automation {
         let settings = print::Settings { pages, paper, orientation, layout, content };
         let sizes: Vec<(f64, f64)> = self.doc(a)?.info.pages.iter().map(|p| (p.width as f64, p.height as f64)).collect();
         let sheets = print::layout(&sizes, &settings).map_err(|e| bad(e.to_string()))?.len();
+        let force_image = a.opt_bool("print_as_image")?.unwrap_or(false);
         let bytes = self.session.print_pdf(id, &settings).map_err(failed)?;
         let mut out = json!({ "sheets": sheets, "pages": settings.pages.len(), "bytes": bytes.len() });
         match (a.opt_str("path")?, a.opt_str("printer")?) {
             (Some(p), None) => {
                 let path = self.resolve(p, true)?;
+                let bytes = if force_image { pdfcraft_engine::print_safety::image_pdf(std::sync::Arc::new(bytes)).map_err(failed)? } else { bytes };
                 write_atomic(&path, &bytes)?;
+                out["bytes"] = json!(bytes.len());
+                out["print_as_image"] = json!(force_image);
                 out["path"] = json!(path.to_string_lossy());
             }
             (None, Some(printer)) => {
@@ -163,7 +167,7 @@ impl Automation {
                         Some(_) => return Err(bad("options must be an object of option keys and choices from printer_options")),
                     },
                 };
-                out["job"] = json!(spool::submit(&bytes, &job).map_err(|e| failed(e.to_string()))?);
+                out["job"] = json!(pdfcraft_engine::print_safety::submit(bytes, &job, force_image).map_err(failed)?);
             }
             _ => return Err(bad("pass either path (save the print-ready PDF) or printer (a name from printers, or \"default\")")),
         }

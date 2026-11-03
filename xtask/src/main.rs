@@ -39,6 +39,7 @@ const COMMANDS: &[(&str, &str, Command)] = &[
         gates::render_oracle,
     ),
     ("screenshots", "Regenerate the README screenshots in docs/images/ and their ATTRIBUTION entries", screenshots::run),
+    ("korean-fonts", "Fetch the verified OFL Korean font into an external craft-fonts build input (DIR required)", assets::korean_fonts),
     ("models", "Fetch the OCR models (ATTRIBUTION.toml kind = \"model\") into assets/models/, verified by SHA-256", assets::models),
     ("demo-pdf", "Build dist/demo/pdfcraft-showcase.pdf (needs Google Chrome or Chromium)", demo_pdf::run),
 ];

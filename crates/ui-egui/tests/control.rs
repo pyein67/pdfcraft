@@ -320,7 +320,7 @@ fn language_switch_preserves_document_and_command_ids() {
     let documents = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
     assert_eq!(documents[0]["dirty"], true);
     let commands = ok(&mut h, &c, "ui.commands", json!({}));
-    for code in ["ja", "zh-hans", "fr", "de", "uk", "lt", "en"] {
+    for code in ["ja", "zh-hans", "fr", "de", "uk", "lt", "ko", "en"] {
         ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": code }));
         h.run_steps(2);
         let state = ok(&mut h, &c, "ui.state", json!({}));
@@ -1575,4 +1575,91 @@ fn click_and_drag_refuse_coordinates_that_overflow_like_move() {
     let (x, y) = (read[0].as_f64().unwrap() + 4.0, read[1].as_f64().unwrap() + 4.0);
     assert_eq!(ok(&mut h, &c, "ui.click", json!({ "x": x, "y": y }))["clicked"], json!([x, y]));
     ok(&mut h, &c, "ui.drag", json!({ "from": [x, y], "to": [x + 10.0, y], "steps": 2 }));
+}
+
+#[test]
+fn korean_preferences_and_search_keep_command_ids() {
+    let (mut h, c) = harness();
+    ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": "ko" }));
+    ok(&mut h, &c, "ui.click", json!({ "label": "읽기" }));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["mode"], "Read");
+    ok(&mut h, &c, "ui.command", json!({ "id": "app.preferences" }));
+    let prefs = ok(&mut h, &c, "ui.inspect", json!({ "query": "인터페이스 언어" }));
+    assert!(prefs["count"].as_u64().unwrap() > 0, "{prefs}");
+    let selector = ok(&mut h, &c, "ui.inspect", json!({ "query": "한국어" }));
+    let combo = selector["widgets"].as_array().unwrap().iter().find(|w| w["role"] == "ComboBox").expect("language selector");
+    ok(&mut h, &c, "ui.click", json!({ "id": combo["id"] }));
+    ok(&mut h, &c, "ui.click", json!({ "label": "English" }));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["language"], "en");
+    let selector = ok(&mut h, &c, "ui.inspect", json!({ "query": "English" }));
+    let combo = selector["widgets"].as_array().unwrap().iter().find(|w| w["role"] == "ComboBox").expect("language selector");
+    ok(&mut h, &c, "ui.click", json!({ "id": combo["id"] }));
+    ok(&mut h, &c, "ui.click", json!({ "label": "한국어" }));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["language"], "ko");
+    if let Ok(dir) = std::env::var("PDFCRAFT_KOREAN_UI_SHOTS") {
+        std::fs::create_dir_all(&dir).unwrap();
+        h.render().unwrap().save(format!("{dir}/preferences-ko.png")).unwrap();
+    }
+    ok(&mut h, &c, "ui.click", json!({ "label": "확인" }));
+    for query in ["문서 분할", "Split document", "page.split"] {
+        ok(&mut h, &c, "ui.command", json!({ "id": "view.palette" }));
+        ok(&mut h, &c, "ui.type", json!({ "text": query }));
+        let hits = ok(&mut h, &c, "ui.inspect", json!({ "query": "문서 분할…" }));
+        assert!(hits["count"].as_u64().unwrap() > 0, "{query}: {hits}");
+        ok(&mut h, &c, "ui.key", json!({ "key": "Escape" }));
+        h.state_mut().palette_query.clear();
+    }
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"][0]["name"], "doc.pdf");
+    for (dialog, label) in [("properties", "문서 속성"), ("protect", "암호로 보호"), ("about", "기여자")] {
+        ok(&mut h, &c, "ui.set", json!({ "key": "dialog", "value": dialog }));
+        let found = ok(&mut h, &c, "ui.inspect", json!({ "query": label }));
+        assert!(found["count"].as_u64().unwrap() > 0, "{dialog}: {found}");
+        if let Ok(dir) = std::env::var("PDFCRAFT_KOREAN_UI_SHOTS") {
+            h.render().unwrap().save(format!("{dir}/{dialog}-ko.png")).unwrap();
+        }
+    }
+    ok(&mut h, &c, "ui.set", json!({ "key": "dialog", "value": "none" }));
+}
+
+/// Use Windows' common display scales with the real shell and embedded fallback fonts.
+/// Geometry assertions catch controls escaping the viewport; optional shots allow visual review.
+#[test]
+fn korean_menu_and_preferences_fit_common_display_scales() {
+    for (width, scale) in [(1024.0, 1.0), (1280.0, 1.25), (1440.0, 1.5)] {
+        let (mut h, c) = harness_pages_at(5, width, scale);
+        ok(&mut h, &c, "ui.set", json!({"key":"language", "value":"ko"}));
+        h.run_steps(3);
+        for label in ["메뉴", "읽기"] {
+            let rect = h.get_by_label(label).rect();
+            assert!(rect.left() >= 0.0 && rect.right() <= width, "{label}: {rect:?} at {width}/{scale}");
+        }
+        h.get_by_label("메뉴").click();
+        h.run_steps(2);
+        h.get_by_label("파일 ⏵").hover();
+        h.run_steps(3);
+        let rect = h.get_by_label_contains("다른 이름으로 저장…").rect();
+        assert!(rect.left() >= 0.0 && rect.right() <= width, "file menu: {rect:?}");
+        if let Ok(dir) = std::env::var("PDFCRAFT_KOREAN_UI_SHOTS") {
+            std::fs::create_dir_all(&dir).unwrap();
+            h.render().unwrap().save(format!("{dir}/menu-ko-{width}-{scale}.png")).unwrap();
+        }
+        ok(&mut h, &c, "ui.key", json!({"key":"Escape"}));
+        ok(&mut h, &c, "ui.key", json!({"key":"Escape"}));
+        ok(&mut h, &c, "ui.command", json!({"id":"app.preferences"}));
+        h.run_steps(3);
+        for label in ["인터페이스 언어", "인터페이스 크기"] {
+            let rect = h.get_by_label(label).rect();
+            assert!(
+                rect.left() >= 0.0 && rect.right() <= width && rect.top() >= 0.0 && rect.bottom() <= 900.0,
+                "{label}: {rect:?} at {width}/{scale}"
+            );
+        }
+        let selector = ok(&mut h, &c, "ui.inspect", json!({"query":"한국어", "role":"ComboBox"}));
+        let rect = selector["widgets"][0]["rect"].as_array().expect("Korean language selector rectangle");
+        assert!(rect[0].as_f64().unwrap() >= 0.0 && rect[2].as_f64().unwrap() <= f64::from(width));
+        assert!(rect[1].as_f64().unwrap() >= 0.0 && rect[3].as_f64().unwrap() <= 900.0);
+        if let Ok(dir) = std::env::var("PDFCRAFT_KOREAN_UI_SHOTS") {
+            h.render().unwrap().save(format!("{dir}/preferences-ko-{width}-{scale}.png")).unwrap();
+        }
+    }
 }

@@ -373,3 +373,71 @@ fn a_printer_without_two_sided_printing_points_to_its_properties() {
     h.run_steps(2);
     h.get_by_label_contains(note);
 }
+
+#[test]
+fn explicit_save_as_pdf_while_discovery_is_pending_is_not_overridden() {
+    use std::sync::{Arc, Mutex};
+    let mut h = harness();
+    let gate = Arc::new(Mutex::new(()));
+    let hold = gate.lock().unwrap();
+    let wait = gate.clone();
+    h.state_mut().printer_source = Some(Arc::new(move || {
+        let _guard = wait.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        vec![pdfcraft_engine::print::spool::Printer { name: "Default Laser".into(), default: true, two_sided: None }]
+    }));
+    assert!(h.state_mut().execute("print.dialog"));
+    h.run_steps(2);
+    h.get_by(|n| n.role() == egui::accesskit::Role::ComboBox && n.value().as_deref() == Some("Looking for printers…"));
+    assert!(!h.state_mut().print_now(), "must not silently save while printer discovery is unresolved");
+    h.get_by(|n| n.value().as_deref() == Some("Looking for printers…") && n.role() == egui::accesskit::Role::ComboBox).click();
+    h.run_steps(2);
+    // Both the combo item and the disabled action may have this label; only the item is selectable.
+    h.get_by(|n| n.label().as_deref() == Some("Save as PDF") && !n.is_disabled()).click();
+    h.run_steps(2);
+    assert!(h.state().print_draft.printer_picked, "clicking the already-None value is still an explicit choice");
+    drop(hold);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while h.state().print_draft.printers_loading && std::time::Instant::now() < until {
+        h.run_steps(1);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(!h.state().print_draft.printers_loading);
+    assert_eq!(h.state().print_draft.printer, None);
+    h.state_mut().dialog = None;
+    h.state_mut().open_print();
+    h.run_steps(2);
+    assert_eq!(h.state().print_draft.printer, None, "reopening retains explicit Save as PDF");
+    assert!(h.state().print_draft.printer_picked);
+}
+
+#[test]
+fn cancelling_print_does_not_submit_or_change_the_document() {
+    let mut h = harness();
+    h.state_mut().open_print();
+    h.run_steps(2);
+    let id = h.state().views[0].id;
+    let before = h.state().session.get(id).unwrap().dirty;
+    h.get_by_label("Cancel").click();
+    h.run_steps(2);
+    assert_eq!(h.state().dialog, None);
+    assert_eq!(h.state().session.get(id).unwrap().dirty, before);
+}
+
+#[cfg(windows)]
+#[test]
+fn image_print_choice_survives_reopening_the_windows_dialog() {
+    let mut h = harness();
+    h.state_mut().printer_source =
+        Some(std::sync::Arc::new(|| vec![pdfcraft_engine::print::spool::Printer { name: "Test Queue".into(), default: true, two_sided: None }]));
+    h.state_mut().print_draft.printer = Some("Test Queue".into());
+    h.state_mut().print_draft.printer_picked = true;
+    h.state_mut().open_print();
+    h.run_steps(3);
+    h.get_by_label("Print as image (600 dpi)").click();
+    h.run_steps(2);
+    assert!(h.state().print_draft.print_as_image);
+    h.state_mut().dialog = None;
+    h.state_mut().open_print();
+    h.run_steps(2);
+    assert!(h.state().print_draft.print_as_image);
+}

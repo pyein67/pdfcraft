@@ -54,3 +54,10 @@ sidecar. This provides a file type icon; first-page thumbnails still need a thum
 packaging/icons.sh        # needs resvg and python3; iconutil (macOS) for the .icns
 cargo xtask assets        # then update the sha256 values in ATTRIBUTION.toml and run with --write
 ```
+
+## Korean Windows build
+
+Windows uses the contributor-supplied GPT-generated PDF design in `korean/pdfcraft-pdf-icon.ico`
+for both EXE resource groups and installer shortcuts, plus its unchanged 256px PNG frame
+for the running window/taskbar. All original assets above remain as backups; Linux/macOS
+continue to use them. See [registration and validation](../../docs/windows-korean-icon.md).

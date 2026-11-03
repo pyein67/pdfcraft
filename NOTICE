@@ -58,3 +58,11 @@ dependencies change (plan/adr/0002, 0006).
 Vendored (vendor/, patched; see vendor/README.md):
 - hayro 0.7.1 — Apache-2.0 OR MIT, Copyright the hayro authors (licence files kept in vendor/hayro).
 - hayro-interpret 0.7.0 — Apache-2.0 OR MIT, Copyright the hayro authors (LICENSE-APACHE, LICENSE-MIT kept in vendor/hayro-interpret).
+
+Korean-enabled builds:
+- Nanum Gothic Regular — Copyright (c) 2010, NHN Corporation (Naver), with Reserved Font Names
+  Nanum, Naver Nanum, NanumGothic, Naver NanumGothic, NanumMyeongjo, Naver NanumMyeongjo,
+  NanumBrush, Naver NanumBrush, NanumPen, Naver NanumPen. Unmodified, SIL Open Font License 1.1.
+  Pinned download and hashes: ATTRIBUTION.toml (kind = "korean-font"). Font assets remain in the
+  external craft-fonts build input; Windows Korean packages include NanumGothic-OFL.txt and
+  KOREAN-ATTRIBUTION.txt. Keep those notices and the full licence when redistributing.
