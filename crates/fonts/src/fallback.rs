@@ -22,7 +22,7 @@
 //! 3. craft-fonts holds that exact family. Never another family — see [`crate::embedding`].
 //! 4. The descendant font's `/CIDSystemInfo /Ordering` names a script, and craft-fonts has a face
 //!    for it. Today that means Adobe-Japan1.
-//! 5. The ordering names a script we have **no** licensed face for (GB1, CNS1, Korea1). There is
+//! 5. The ordering names a script we have **no** licensed face for (GB1, CNS1). There is
 //!    no honest substitute, so the chain reports none: the caller draws nothing and can say why.
 //! 6. Otherwise, the nearest of the standard 14 by `/FontDescriptor /Flags` — serif, fixed pitch,
 //!    bold and italic. This step always succeeds, so a simple font is never left without a face.
@@ -156,9 +156,10 @@ impl Substitution {
 fn script_for(ordering: &str) -> Option<&'static str> {
     match ordering {
         "Japan1" => Some("Jpan"),
-        // Registered orderings we have no openly licensed face for. AGENTS.md 1.1 rules out
-        // Source Han and Noto CJK (Source Han rebranded), which is why these have none.
-        "GB1" | "CNS1" | "Korea1" | "KR" => Some(""),
+        // Korean builds have an approved Hangul face, unlike Chinese builds where AGENTS.md
+        // 1.1 prohibits the usual Source Han / Noto CJK substitutions.
+        "Korea1" | "KR" => Some("Hang"),
+        "GB1" | "CNS1" => Some(""),
         _ => None,
     }
 }
@@ -294,13 +295,27 @@ mod tests {
     fn a_script_with_no_licensed_face_reports_none_rather_than_latin() {
         // The user's Chinese PDF draws nothing. The point of this is that we can now say so,
         // instead of quietly standing Helvetica in and showing the wrong glyphs.
-        for ordering in ["GB1", "CNS1", "Korea1", "KR"] {
+        for ordering in ["GB1", "CNS1"] {
             let s = substitute(&req("SomeCJKFont", false, 0, Some(ordering)));
             assert_eq!(s.face, Face::None, "{ordering}");
             assert_eq!(s.why, Why::NoFaceForScript, "{ordering}");
             assert_eq!(s.face_name(), None);
             assert!(!s.why.is_faithful());
             assert!(s.why.note().contains("no licensed face"), "{ordering}");
+        }
+    }
+
+    #[test]
+    fn a_korean_cid_font_uses_a_korean_face_only_when_the_build_supplies_one() {
+        for ordering in ["Korea1", "KR"] {
+            let s = substitute(&req("SomeKoreanFont", false, 0, Some(ordering)));
+            if crate::CRAFT_FONTS.iter().any(|f| f.covers("Hang")) {
+                assert!(matches!(s.face, Face::Craft(_)), "{ordering}: {s:?}");
+                assert_eq!(s.why, Why::ScriptFace);
+            } else {
+                assert_eq!(s.face, Face::None);
+                assert_eq!(s.why, Why::NoFaceForScript);
+            }
         }
     }
 
