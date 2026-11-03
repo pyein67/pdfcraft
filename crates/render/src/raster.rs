@@ -5625,9 +5625,9 @@ endstream endobj
 5 0 obj << /Type /XObject /Subtype /Form /BBox [0 0 120 70] /Resources << /Font << /F1 6 0 R >> >> /Length {} >> stream
 {content}
 endstream endobj
-6 0 obj << /Type /Font /Subtype /Type0 /BaseFont /HYGoThic-Medium /Encoding /UniKS-UCS2-H /DescendantFonts [7 0 R] >> endobj
-7 0 obj << /Type /Font /Subtype /CIDFontType0 /BaseFont /HYGoThic-Medium /CIDSystemInfo << /Registry (Adobe) /Ordering (Korea1) /Supplement 2 >> /FontDescriptor 8 0 R /DW 1000 >> endobj
-8 0 obj << /Type /FontDescriptor /FontName /HYGoThic-Medium /Flags 4 /FontBBox [0 -200 1000 900] /ItalicAngle 0 /Ascent 900 /Descent -200 /CapHeight 700 /StemV 80 >> endobj
+6 0 obj << /Type /Font /Subtype /Type0 /BaseFont /AdobeGothicStd-Bold /Encoding /UniKS-UTF16-H /DescendantFonts [7 0 R] >> endobj
+7 0 obj << /Type /Font /Subtype /CIDFontType0 /BaseFont /AdobeGothicStd-Bold /CIDSystemInfo << /Registry (Adobe) /Ordering (Korea1) /Supplement 1 >> /FontDescriptor 8 0 R /DW 1000 >> endobj
+8 0 obj << /Type /FontDescriptor /FontName /AdobeGothicStd-Bold /Flags 32 /FontWeight 700 /FontBBox [0 -200 1000 900] /ItalicAngle 0 /Ascent 900 /Descent -200 /CapHeight 700 /StemV 80 >> endobj
 trailer << /Root 1 0 R >>
 %%EOF",
             content.len()
